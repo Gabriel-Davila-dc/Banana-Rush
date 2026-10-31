@@ -1,0 +1,25 @@
+Colheita no Bananal - versão web
+
+ANTES DE PUBLICAR À MÃO
+Rode na pasta do projeto:  node tools/build-site.js
+Isso gera index.html e assets/ aqui dentro.
+
+COMO PUBLICAR NO NETLIFY (arrastando a pasta)
+1. Entre em https://app.netlify.com (crie a conta grátis).
+2. Vá em "Add new site" > "Deploy manually".
+3. Arraste ESTA PASTA inteira (site) para a área indicada.
+4. Em poucos segundos aparece o link (algo.netlify.app).
+   Em "Site configuration" > "Change site name" você troca o nome do link.
+
+Ligando o Netlify ao GitHub o build roda sozinho a cada push (veja o README.md).
+
+O QUE TEM AQUI
+index.html            o jogo (gerado)
+assets/               texturas, céu e modelos 3D (gerado)
+icon.svg              ícone do site
+manifest.webmanifest  dados para instalar como app (e usar depois na Play Store)
+_headers              deixa as texturas em cache no Netlify (carrega mais rápido na 2ª vez)
+
+CRÉDITOS
+Texturas, céu e modelos 3D: Poly Haven (polyhaven.com), licença CC0.
+Biblioteca 3D: three.js (licença MIT).

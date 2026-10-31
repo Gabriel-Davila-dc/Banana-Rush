@@ -1,0 +1,13 @@
+# gerados pelo tools/build-site.js (vêm do colheita-bananeira.html e da pasta assets/)
+site/index.html
+site/assets/
+
+# servidor de teste local e rascunhos
+.claude/
+thumbs.html
+
+# sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+node_modules/

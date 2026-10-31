@@ -1,0 +1,10 @@
+{
+  "name": "Colheita no Bananal",
+  "short_name": "Bananal",
+  "start_url": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#2f6b2a",
+  "theme_color": "#2f6b2a",
+  "icons": [{"src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}]
+}
