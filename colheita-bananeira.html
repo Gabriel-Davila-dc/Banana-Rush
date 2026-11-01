@@ -801,6 +801,19 @@ function merge(list){
   o.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   return o;
 }
+// junta as peças paradas (filhos diretos) de um grupo em uma malha por material
+function mergeKids(g){
+  const by = new Map(), olds = [];
+  for (const o of g.children){
+    if (!o.isMesh || o.isInstancedMesh || o.isSkinnedMesh || Array.isArray(o.material) || o.material.transparent) continue;
+    o.updateMatrix(); if (o.matrix.determinant() < 0) continue;
+    const k = o.material.uuid + '|' + (o.castShadow ? 1 : 0) + (o.receiveShadow ? 1 : 0);
+    if (!by.has(k)) by.set(k, {o, list:[]});
+    const geo = o.geometry.clone(); geo.applyMatrix4(o.matrix); by.get(k).list.push(geo); olds.push(o);
+  }
+  for (const b of by.values()){ if (b.list.length < 2) continue; const mm = new THREE.Mesh(merge(b.list), b.o.material); mm.castShadow = b.o.castShadow; mm.receiveShadow = b.o.receiveShadow; g.add(mm); }
+  for (const o of olds) if (by.get(o.material.uuid + '|' + (o.castShadow ? 1 : 0) + (o.receiveShadow ? 1 : 0)).list.length >= 2) g.remove(o);
+}
 function leafGeo(len, wid, rise = .55, droop = .95, seg = 18){
   const g = new THREE.PlaneGeometry(len, wid, seg, seg > 10 ? 5 : 2), p = g.attributes.position;
   for (let i=0;i<p.count;i++){
@@ -818,19 +831,21 @@ function leafGeo(len, wid, rise = .55, droop = .95, seg = 18){
   g.computeVertexNormals(); return g;
 }
 function crownGeo(n, len, seg = 22){
-  const parts = [], GA = 2.39996;
+  const parts = [], low = [], GA = 2.39996;
   for (let k=0;k<n;k++){
     const age = k/(n - 1); // 0 = folha nova, 1 = folha velha
     const L2 = len*(.8 + .18*Math.min(1, age*1.5))*rnd(.92, 1.06);
     const g = leafGeo(L2, .6*(.92 + .16*age), .5 - .2*age, .62 + .42*age, seg);
+    const gl = seg > 10 ? leafGeo(L2, .6*(.92 + .16*age), .5 - .2*age, .62 + .42*age, 8) : null;
     const elev = 1.0 - .62*age + rnd(-.1, .1);
-    g.applyMatrix4(new THREE.Matrix4().makeRotationY(k*GA + rnd(-.2, .2)).multiply(new THREE.Matrix4().makeRotationZ(elev)).multiply(new THREE.Matrix4().makeRotationX(rnd(-.3, .3))));
-    g.translate(0, -age*.28, 0);
-    parts.push(g);
+    const mx = new THREE.Matrix4().makeRotationY(k*GA + rnd(-.2, .2)).multiply(new THREE.Matrix4().makeRotationZ(elev)).multiply(new THREE.Matrix4().makeRotationX(rnd(-.3, .3)));
+    g.applyMatrix4(mx); g.translate(0, -age*.28, 0); parts.push(g);
+    if (gl){ gl.applyMatrix4(mx); gl.translate(0, -age*.28, 0); low.push(gl); }
   }
   // folha nova enrolada (vela) no topo
   const v = new THREE.CylinderGeometry(.025, .055, .8, 7); v.translate(0, .4, 0); v.rotateZ(.12); parts.push(v);
-  return merge(parts);
+  const out = merge(parts); if (low.length){ low.push(v); out.userData.low = merge(low); }
+  return out;
 }
 function dryGeo(n){
   const parts = [];
@@ -964,20 +979,21 @@ function makeTreeMesh(shadow){
   const g = new THREE.Group(), body = new THREE.Group();
   body.rotation.set(rnd(-.04, .04), rnd(0, 6.3), rnd(-.04, .04));
   body.scale.setScalar(rnd(.92, 1.12));
-  const trunk = new THREE.Mesh(trunkGeo, M.trunk); trunk.castShadow = shadow; trunk.receiveShadow = true;
+  const shg = pick(sheaths), TS = makeTreeMesh.ts || (makeTreeMesh.ts = new Map()); if (!TS.has(shg)) TS.set(shg, merge([trunkGeo, shg]));
+  const trunk = new THREE.Mesh(TS.get(shg), M.trunk); trunk.castShadow = shadow; trunk.receiveShadow = true;
   const leafMat = pick([M.leaf, M.leaf2, M.leaf3]);
-  const crown = new THREE.Mesh(pick(crowns), leafMat); crown.position.y = 3.3; crown.castShadow = shadow; crown.customDepthMaterial = LEAF_DEPTH;
+  const crown = new THREE.Mesh(pick(crowns), leafMat); crown.position.y = 3.3; crown.userData.hi = crown.geometry; crown.castShadow = shadow; crown.customDepthMaterial = LEAF_DEPTH;
   const dry = new THREE.Mesh(pick(drys), M.leafDead); dry.castShadow = shadow; dry.customDepthMaterial = LEAF_DEPTH;
-  const sh = new THREE.Mesh(pick(sheaths), M.trunk); sh.castShadow = shadow;
   const bd = new THREE.Mesh(pick(baseDrys), M.leafDead); bd.castShadow = shadow;
-  body.add(trunk, crown, dry, sh, bd);
+  body.add(trunk, crown, dry, bd);
+  let kid = null;
   if (Math.random() < .6){ // filho da touceira ao lado
-    const kid = new THREE.Group(); kid.position.set(rnd(.5,.7)*(Math.random()<.5?-1:1), 0, rnd(-.6,.6)); kid.scale.setScalar(rnd(.22,.38));
+    kid = new THREE.Group(); kid.position.set(rnd(.5,.7)*(Math.random()<.5?-1:1), 0, rnd(-.6,.6)); kid.scale.setScalar(rnd(.22,.38));
     kid.add(new THREE.Mesh(trunkGeo, M.trunk)); const kc = new THREE.Mesh(pick(kidCrowns), leafMat); kc.position.y = 3.3; kid.add(kc);
     body.add(kid);
   }
   g.add(body);
-  return {g, body, crown, leafMat, dry};
+  return {g, body, crown, leafMat, dry, bd, kid};
 }
 
 /* ---------- céu ---------- */
@@ -1020,6 +1036,7 @@ const cloudTex = tex(128, 128, (g, w, h) => {
 });
 cloudTex.wrapS = cloudTex.wrapT = THREE.ClampToEdgeWrapping;
 const cloudMats = [.95, .82, .7].map(o => new THREE.SpriteMaterial({map:cloudTex, transparent:true, opacity:o, depthWrite:false, fog:false, color:C(o > .9 ? '#ffffff' : '#e6ebf0')}));
+let cloudTint = null;
 for (let i=0;i<13;i++){
   const c = new THREE.Group();
   const n = 7 + (Math.random()*7|0);
@@ -1028,6 +1045,18 @@ for (let i=0;i<13;i++){
     const sz = rnd(9, 17)*(1 - Math.abs(a - .5));
     sp.position.set((a - .5)*n*3.2 + rnd(-1.5, 1.5), Math.sin(a*Math.PI)*rnd(1, 3.5) + rnd(-.5, .5), rnd(-3, 3));
     sp.scale.set(sz*1.5 + 6, sz + 4, 1); c.add(sp);
+  }
+  {
+    let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+    for (const sp of c.children){ x0 = Math.min(x0, sp.position.x - sp.scale.x/2); x1 = Math.max(x1, sp.position.x + sp.scale.x/2); y0 = Math.min(y0, sp.position.y - sp.scale.y/2); y1 = Math.max(y1, sp.position.y + sp.scale.y/2); }
+    const W = 512, H = Math.max(64, Math.round(W*(y1 - y0)/(x1 - x0))), cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    const g2 = cv.getContext('2d'), kx = W/(x1 - x0), ky = H/(y1 - y0);
+    const tint = cloudTint || (cloudTint = (() => { const t = document.createElement('canvas'), im = cloudTex.image; t.width = im.width; t.height = im.height; const tg = t.getContext('2d'); tg.drawImage(im, 0, 0); tg.globalCompositeOperation = 'source-atop'; tg.fillStyle = '#e6ebf0'; tg.fillRect(0, 0, t.width, t.height); return t; })());
+    c.children.slice().sort((a, b) => a.position.z - b.position.z).forEach(sp => { g2.globalAlpha = sp.material.opacity; g2.drawImage(sp.material.opacity > .9 ? cloudTex.image : tint, (sp.position.x - sp.scale.x/2 - x0)*kx, (y1 - sp.position.y - sp.scale.y/2)*ky, sp.scale.x*kx, sp.scale.y*ky); });
+    const tx = new THREE.CanvasTexture(cv); tx.encoding = cloudTex.encoding;
+    const one = new THREE.Sprite(new THREE.SpriteMaterial({map:tx, transparent:true, depthWrite:false, fog:false}));
+    one.scale.set(x1 - x0, y1 - y0, 1); one.position.set((x0 + x1)/2, (y0 + y1)/2, 0);
+    c.clear(); c.add(one); cloudMats.push(one.material);
   }
   c.position.set(rnd(-150, 150), rnd(40, 64), rnd(-180, -70)); c.userData.v = rnd(.8, 2);
   scene.add(c); clouds.push(c);
@@ -1114,7 +1143,7 @@ for (const v of VLINES){
   const blades = [];
   for (let k=0;k<9;k++){
     const h = rnd(.22, .7), w = rnd(.022, .042);
-    const b = new THREE.PlaneGeometry(w, h, 1, 4); b.translate(0, h/2, 0);
+    const b = new THREE.PlaneGeometry(w, h, 1, 3); b.translate(0, h/2, 0);
     const bp = b.attributes.position;
     for (let i=0;i<bp.count;i++){ const t = bp.getY(i)/h; bp.setX(i, bp.getX(i)*(1 - t*.92)); bp.setZ(i, t*t*h*.35); }
     b.rotateY(rnd(0, 6.3)); b.translate(rnd(-.1,.1), 0, rnd(-.1,.1));
@@ -1144,7 +1173,7 @@ for (const v of VLINES){
     i++;
   }
   tufts.count = i; tufts.receiveShadow = true; tufts.frustumCulled = false; scene.add(tufts);
-  chunkInstances(tufts, 18, coarse ? 42 : 62);
+  chunkInstances(tufts, 26, coarse ? 42 : 62);
   const fl = new THREE.InstancedMesh(new THREE.SphereGeometry(.06, 6, 4), new THREE.MeshLambertMaterial({color:0xffffff}), 260);
   for (let k=0;k<260;k++){
     let x, z; do { x = rnd(-45, 55); z = rnd(-55, 15); } while ((z > 7.4 && z < 12.6) || (Math.abs(x) < 23 && z > -29 && z < 7));
@@ -1428,8 +1457,13 @@ function plantTree(x, z){
   if (v === 'prata'){ mesh.body.scale.y *= 1.12; mesh.body.children[0].material = M.trunkP; }
   t.baseY = heightAt(x, z);
   t.grp.position.set(x, t.baseY, z); scene.add(t.grp);
-  const disc = new THREE.Mesh(drape(new THREE.CircleGeometry(1.1, 20).rotateX(-Math.PI/2), x, z, .05), M.coroa); disc.position.set(x, 0, z); disc.receiveShadow = true; scene.add(disc);
-  const ao = new THREE.Mesh(drape(new THREE.PlaneGeometry(3.2, 3.2, 6, 6).rotateX(-Math.PI/2), x, z, .07), M.ao); ao.position.set(x, 0, z); scene.add(ao);
+  const DQ = plantTree.q || (plantTree.q = {disc:[], ao:[]});
+  DQ.disc.push(drape(new THREE.CircleGeometry(1.1, 20).rotateX(-Math.PI/2), x, z, .05).translate(x, 0, z));
+  DQ.ao.push(drape(new THREE.PlaneGeometry(3.2, 3.2, 6, 6).rotateX(-Math.PI/2), x, z, .07).translate(x, 0, z));
+  if (DQ.disc.length === 1) queueMicrotask(() => {
+    const d = new THREE.Mesh(merge(DQ.disc), M.coroa); d.receiveShadow = true; scene.add(d);
+    scene.add(new THREE.Mesh(merge(DQ.ao), M.ao)); DQ.disc = []; DQ.ao = [];
+  });
   t.stump = new THREE.Group();
   t.mae = new THREE.Group();
   const s = new THREE.Mesh(maeGeo, v === 'prata' ? M.trunkP : M.trunk), c = new THREE.Mesh(cutGeo, M.cut);
@@ -1448,7 +1482,7 @@ function plantTree(x, z){
     const st = new THREE.Mesh(suckerStemGeo, M.trunk), lf = new THREE.Mesh(suckerLeafGeo, M.sucker); st.castShadow = lf.castShadow = true;
     sg.add(st, lf); sg.visible = false; t.sk.add(sg); t.skMeshes.push(sg);
   }
-  t.dryMesh = mesh.dry; t.dry = Math.random() < .65;
+  t.dryMesh = mesh.dry; t.dry = Math.random() < .65; t.far = [mesh.bd, mesh.kid].filter(Boolean);
   t.prop = new THREE.Mesh(propGeo, M.bamboo); t.prop.castShadow = true; t.prop.visible = false; t.body.add(t.prop);
   t.lbl = makeLabel('tq');
   resetTree(t, .5); trees.push(t);
@@ -1685,6 +1719,7 @@ function buildTractorModel(){
   { const pto = add(new THREE.CylinderGeometry(.04, .04, .2, 10), M.metal, -1.6, .7, 0); pto.rotation.z = Math.PI/2; }
   add(new THREE.BoxGeometry(1.4, .1, .12), M.metal, -2.25, .7, 0);
   tractor.makeWheel = wheel;
+  mergeKids(g);
   g.position.set(0, 0, tractor.z); scene.add(g);
 }
 buildTractorModel();
@@ -1703,6 +1738,7 @@ function buildCart(){
   const before = tractor.wheels.length;
   const realAdd = tractor.makeWheel;
   for (const ax of axX) for (const z of [-(sz.W/2 + .13), sz.W/2 + .13]) realAdd(.45, .26, ax, .45, z, .2);
+  mergeKids(cg);
   // as rodas foram criadas no grupo do trator; passa para a carreta
   const nw = tractor.wheels.slice(before);
   for (const w of nw){ g.remove(w); cg.add(w); cw.push(w); }
@@ -2019,7 +2055,7 @@ function hairClumps(r, pts, vol, n, female){
       const v = new V3(Math.sin(th)*Math.sin(z)*rr, Math.cos(th)*rr, Math.sin(th)*Math.cos(z)*rr); skull(v, v.y/rr, v.z/rr); if (v.y < 0) v.y *= JAW;
       P.push(new V3(v.x*.91, v.y*1.16, v.z*1.01));
     }
-    out.push(tube(P, female ? rnd(.0045, .0068) : rnd(.0032, .005), 12, 6, u => (u < .15 ? .45 + 3.6*u : 1)*(1 - .85*u)));
+    out.push(tube(P, female ? rnd(.0045, .0068) : rnd(.0032, .005), 6, 4, u => (u < .15 ? .45 + 3.6*u : 1)*(1 - .85*u)));
   }
   return merge(out);
 }
@@ -2455,7 +2491,10 @@ function chunkInstances(im, cell, maxDist){
   }
   parent.remove(im);
 }
-function updateCull(){ const Lc = chunkInstances.list; if (!Lc) return; const cp = camera.position; for (const ch of Lc) if (ch.userData.cullD) ch.visible = ch.userData.cullC.distanceTo(cp) < ch.userData.cullD; }
+function updateCull(){
+  const cp0 = camera.position;
+  for (const t of trees){ const c = t.crown, hi = c && c.userData.hi; if (!hi) continue; const far = (t.x - cp0.x)**2 + (t.z - cp0.z)**2 > 30*30; c.geometry = far ? hi.userData.low : hi; if (t.far) for (const o of t.far) o.visible = !far; }
+  const Lc = chunkInstances.list; if (!Lc) return; const cp = camera.position; for (const ch of Lc) if (ch.userData.cullD) ch.visible = ch.userData.cullC.distanceTo(cp) < ch.userData.cullD; }
 // pedra leve: icosaedro deformado no tamanho da pedra original
 function lowRock(src){
   src.computeBoundingBox(); const b = src.boundingBox, sx = (b.max.x - b.min.x)/2, sy = (b.max.y - b.min.y)/2, sz = (b.max.z - b.min.z)/2;
@@ -3040,7 +3079,7 @@ const outD = (x, z) => Math.hypot(Math.max(0, -60 - x, x - 100), Math.max(0, -66
   const canopyGeo = (() => {
     const parts = [];
     for (const [x, y, z, r] of [[0, 0, 0, 1], [.58, -.18, .22, .68], [-.52, -.12, -.28, .7], [.1, -.22, -.62, .64], [.35, .28, -.25, .55], [-.3, .22, .35, .5], [.7, -.35, -.4, .5], [-.68, -.3, .3, .52]]){
-      const sp = new THREE.IcosahedronGeometry(r, 1), p = sp.attributes.position, nr = sp.attributes.normal;
+      const sp = new THREE.IcosahedronGeometry(r, 0), p = sp.attributes.position, nr = sp.attributes.normal;
       for (let i=0;i<p.count;i++){
         const vx = p.getX(i), vy = p.getY(i), vz = p.getZ(i), len = Math.hypot(vx, vy, vz);
         const k = 1 + (hash2(vx*3.1 + x*7 + vz*1.3, vz*3.3 + vy*2.1 + z*5) - .5)*.5 + (hash2(vx*9.7 + y*3, vz*8.9 + vy*7.1) - .5)*.18;
@@ -3237,7 +3276,7 @@ function applyWeather(rain){
   SERRA.forEach(m => m.material.color.set(rain ? '#a6aeb2' : '#ffffff'));
   sun.intensity = rain ? .75 : 2.5;
   M.cloud.emissiveIntensity = rain ? .08 : .55;
-  cloudMats.forEach((m, k) => m.color.copy(C(rain ? '#8e979e' : k ? '#e6ebf0' : '#ffffff')));
+  cloudMats.forEach((m, k) => m.color.copy(C(rain ? '#8e979e' : k && k < 3 ? '#e6ebf0' : '#ffffff')));
   rainMesh.visible = rain;
 }
 // geada de manhã no inverno, folha queimada pelo frio, cerração no vale
@@ -4999,7 +5038,7 @@ var FARM = {boxes:[], circles:[], animals:[], entered:false};
     g.traverse(o => { if (o.isMesh) o.castShadow = true; });
     return {g, head, legs, kind:'hen', speed:.6, bob:0};
   }
-  const pen = (a, x0, x1, z0, z1) => { a.pen = [x0, x1, z0, z1]; a.x = rnd(x0, x1); a.z = rnd(z0, z1); a.yaw = rnd(0, 6.3); a.tx = a.x; a.tz = a.z; a.wait = rnd(0, 3); a.ph = rnd(0, 6); scene.add(a.g); FARM.animals.push(a); };
+  const pen = (a, x0, x1, z0, z1) => { a.pen = [x0, x1, z0, z1]; a.x = rnd(x0, x1); a.z = rnd(z0, z1); a.yaw = rnd(0, 6.3); a.tx = a.x; a.tz = a.z; a.wait = rnd(0, 3); a.ph = rnd(0, 6); a.g.position.set(a.x, heightAt(a.x, a.z), a.z); a.g.rotation.y = a.yaw; scene.add(a.g); FARM.animals.push(a); };
   pen(makeCow(cowMats[0]), -14.8, -7.4, 16.3, 21.3); pen(makeCow(cowMats[1]), -14.8, -7.4, 16.3, 21.3); pen(makeCow(cowMats[2]), -14.8, -7.4, 16.3, 21.3);
   pen(makePig(), 13.9, 15.9, 15.9, 19.3); pen(makePig(), 13.9, 15.9, 15.9, 19.3);
   for (let i=0;i<8;i++) pen(makeChicken(), 5.4, 12.2, 15.6, 21.2);
