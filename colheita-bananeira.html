@@ -79,17 +79,17 @@ canvas{display:block;width:100%;height:100%;touch-action:none;filter:saturate(1.
 .camBtn:hover{background:var(--panel-2)}
 .camBtn:focus-visible{outline:3px solid var(--cream);outline-offset:2px}
 .crosshair{position:absolute;z-index:3;left:50%;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;background:var(--cream);box-shadow:0 0 0 2px rgba(14,34,19,.6);pointer-events:none}
-@media (pointer:coarse){.camBtn{left:auto;right:max(18px,env(safe-area-inset-right,0px));bottom:130px}}
+@media (pointer:coarse){.camBtn{left:auto;right:max(18px,env(safe-area-inset-right,0px));bottom:150px}}
 .power{position:absolute;z-index:3;left:50%;bottom:18px;transform:translateX(-50%);width:min(320px,78%);background:rgba(14,34,19,.9);border-radius:12px;padding:8px 12px 7px;display:flex;flex-direction:column;gap:5px;align-items:center;pointer-events:none}
 .power span{font-size:12px;font-weight:600;color:var(--cream);letter-spacing:.04em}
 .ptrack{position:relative;width:100%;height:18px;border-radius:9px;background:linear-gradient(90deg,#7a2a1c,#c8402c 55%,#e0a030);overflow:hidden}
 .pzone{position:absolute;top:0;bottom:0;background:var(--good);box-shadow:0 0 0 2px #fff8 inset}
 .pneedle{position:absolute;top:-3px;bottom:-3px;width:5px;margin-left:-2px;background:var(--cream);border-radius:3px;box-shadow:0 0 6px #000}
-.joy{position:absolute;z-index:3;left:max(18px,env(safe-area-inset-left,0px));bottom:18px;width:112px;height:112px;border-radius:50%;background:rgba(14,34,19,.45);border:2px solid rgba(246,241,216,.35);display:none;touch-action:none}
-.knob{position:absolute;left:50%;top:50%;width:48px;height:48px;margin:-24px 0 0 -24px;border-radius:50%;background:var(--cream);opacity:.85}
-.actbtn{position:absolute;z-index:3;right:max(18px,env(safe-area-inset-right,0px));bottom:22px;width:96px;height:96px;border-radius:50%;border:0;background:var(--banana);color:var(--leaf);font-family:var(--display);font-size:19px;box-shadow:0 5px 0 var(--ripe);display:none;touch-action:none}
+.joy{position:absolute;z-index:3;left:max(18px,env(safe-area-inset-left,0px));bottom:18px;width:134px;height:134px;border-radius:50%;background:rgba(14,34,19,.45);border:2px solid rgba(246,241,216,.35);display:none;touch-action:none}
+.knob{position:absolute;left:50%;top:50%;width:58px;height:58px;margin:-29px 0 0 -29px;border-radius:50%;background:var(--cream);opacity:.85}
+.actbtn{position:absolute;z-index:3;right:max(18px,env(safe-area-inset-right,0px));bottom:22px;width:115px;height:115px;border-radius:50%;border:0;background:var(--banana);color:var(--leaf);font-family:var(--display);font-size:22px;box-shadow:0 5px 0 var(--ripe);display:none;touch-action:none}
 .actbtn.on{transform:translateY(3px);box-shadow:0 2px 0 var(--ripe)}
-@media (pointer:coarse){.joy,.actbtn{display:block}.power{bottom:130px}}
+@media (pointer:coarse){.joy,.actbtn{display:block}.power{bottom:154px}}
 .overlay{position:absolute;inset:0;display:flex;background:var(--veil);padding:16px;overflow:auto;z-index:5}
 .card{margin:auto;max-width:540px;width:100%;text-align:center;display:flex;flex-direction:column;gap:10px;align-items:center;background:rgba(9,22,12,.62);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border:1px solid rgba(246,241,216,.12);border-radius:20px;padding:22px 20px 16px;box-shadow:0 12px 40px rgba(0,0,0,.35)}
 .install{width:100%;display:flex;flex-direction:column;align-items:center;gap:6px;background:rgba(255,210,63,.1);border:1px solid rgba(255,210,63,.35);border-radius:14px;padding:12px 12px 10px}
@@ -2733,6 +2733,18 @@ const snd = {
   pick(){ noiseHit(.12, 'lowpass', 600, .35); },
   coin(){ sfx(1320, 1320, .08, 'sine', .12); setTimeout(() => sfx(1760, 1760, .2, 'sine', .12), 70); },
   hiss(){ noiseHit(.55, 'highpass', 3500, .25); },
+  spray(){
+    if (!AC || !NOISE) return;
+    try{
+      const t = AC.currentTime, src = AC.createBufferSource(); src.buffer = NOISE;
+      const hp = AC.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2200;
+      const pk = AC.createBiquadFilter(); pk.type = 'peaking'; pk.frequency.value = 6500; pk.gain.value = 6;
+      const g = AC.createGain(); g.gain.setValueAtTime(.0001, t + .05); g.gain.exponentialRampToValueAtTime(.3, t + .11); g.gain.setValueAtTime(.3, t + .6); g.gain.exponentialRampToValueAtTime(.001, t + 1.05);
+      const lfo = AC.createOscillator(); lfo.frequency.value = 13; const lg = AC.createGain(); lg.gain.value = .05; lfo.connect(lg).connect(g.gain);
+      src.connect(hp).connect(pk).connect(g).connect(AC.destination); src.start(t, Math.random()); src.stop(t + 1.1); lfo.start(t); lfo.stop(t + 1.1);
+    }catch(e){}
+    noiseHit(.08, 'lowpass', 500, .25); sfx(170, 120, .07, 'square', .03);
+  },
   fall(){ noiseHit(.7, 'lowpass', 800, .3); setTimeout(() => { noiseHit(.25, 'lowpass', 260, .7); sfx(80, 40, .25, 'sine', .35); }, 750); },
   monkey(){ [0, 120, 260].forEach((d, i) => setTimeout(() => sfx(520 + i*180, 900 + i*220, .1, 'square', .05), d)); },
 };
@@ -3386,21 +3398,22 @@ function misNeeds(task, t){
   return taskNeeded(task, t);
 }
 const BUNCH_TASK = {desumbigar:1, banhar:1, ensacar:1}, _bp = new V3(), _cd = new V3();
-function aimBunch(t){
+const misReach = task => task === 'banhar' ? 1.4 : 1;
+function aimBunch(t, k = 1){
   if (!t.bunch) return false;
   t.bunch.getWorldPosition(_bp); _bp.y -= .45;
-  if (fp){ camera.getWorldDirection(_cd); const v = _bp.clone().sub(camera.position), d = v.length(); return d < 3.4 && _cd.dot(v.divideScalar(d)) > Math.cos(.3); }
+  if (fp){ camera.getWorldDirection(_cd); const v = _bp.clone().sub(camera.position), d = v.length(); return d < 3.4*k && _cd.dot(v.divideScalar(d)) > Math.cos(.3); }
   let a = Math.atan2(t.x - player.pos.x, t.z - player.pos.z) - player.yaw; a = Math.atan2(Math.sin(a), Math.cos(a));
   return Math.abs(a) < .55;
 }
 // cacho perto mas fora da mira (para a dica)
 function nearMisNoAim(task){
-  for (const t of trees){ if (misNeeds(task, t) && Math.hypot(t.x - player.pos.x, t.z - player.pos.z) < 2.3) return t; }
+  for (const t of trees){ if (misNeeds(task, t) && Math.hypot(t.x - player.pos.x, t.z - player.pos.z) < 2.3*misReach(task)) return t; }
   return null;
 }
 function nearestMis(task){
-  let best = null, bd = BUNCH_TASK[task] ? 2.3 : 2.1;
-  for (const t of trees){ if (!misNeeds(task, t) || (BUNCH_TASK[task] && !aimBunch(t))) continue; const d = Math.hypot(t.x - player.pos.x, t.z - player.pos.z); if (d < bd){ bd = d; best = t; } }
+  let best = null, bd = (BUNCH_TASK[task] ? 2.3 : 2.1)*misReach(task);
+  for (const t of trees){ if (!misNeeds(task, t) || (BUNCH_TASK[task] && !aimBunch(t, misReach(task)))) continue; const d = Math.hypot(t.x - player.pos.x, t.z - player.pos.z); if (d < bd){ bd = d; best = t; } }
   return best;
 }
 // prepara o bananal para a tarefa do dia e define a missão
@@ -3867,7 +3880,7 @@ function actionDown(){
       t.wash = true; refreshBunch(t); float('Banhado +20%', P, '#bfe6ff');
       { const nz = new V3(); P2.piv.localToWorld(nz.set(0, 0, 1.45)); for (let i=0;i<10;i++){ const k = i/10; spawnPart(M.mist, sprayGeo, new V3(nz.x + (t.x - nz.x)*k, nz.y - heightAt(nz.x, nz.z) + (2 - nz.y + heightAt(nz.x, nz.z))*k, nz.z + (t.z - nz.z)*k), new V3(rnd(-.3, .3), rnd(0, .4), rnd(-.3, .3)), .5); } }
       for (let i=0;i<16;i++) spawnPart(M.mist, sprayGeo, new V3(t.x + rnd(-.3, .3), rnd(1.6, 2.2), t.z + rnd(-.3, .3)), new V3(rnd(-.7, .7), rnd(.2, 1), rnd(-.7, .7)), .8);
-      sfx(320, 180, .3, 'sawtooth', .025);
+      snd.spray();
     }
     else if (task === 'ensacar'){ t.bag = true; refreshBunch(t); float('Ensacado +30%', P, '#8fb4ff'); snd.pick(); }
     else if (task === 'desbrotar'){ t.lad--; refreshTreeLook(t); float('Ladrão cortado com a foice', new V3(t.x, 1.6, t.z), '#c9e88a'); burstFlakes(new V3(t.x, .4, t.z), 6); snd.chop('weak'); }
