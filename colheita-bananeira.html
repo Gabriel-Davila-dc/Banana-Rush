@@ -92,6 +92,10 @@ canvas{display:block;width:100%;height:100%;touch-action:none;filter:saturate(1.
 @media (pointer:coarse){.joy,.actbtn{display:block}.power{bottom:130px}}
 .overlay{position:absolute;inset:0;display:flex;background:var(--veil);padding:16px;overflow:auto;z-index:5}
 .card{margin:auto;max-width:540px;width:100%;text-align:center;display:flex;flex-direction:column;gap:10px;align-items:center;background:rgba(9,22,12,.62);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border:1px solid rgba(246,241,216,.12);border-radius:20px;padding:22px 20px 16px;box-shadow:0 12px 40px rgba(0,0,0,.35)}
+.install{width:100%;display:flex;flex-direction:column;align-items:center;gap:6px;background:rgba(255,210,63,.1);border:1px solid rgba(255,210,63,.35);border-radius:14px;padding:12px 12px 10px}
+.install strong{font-family:var(--display);font-weight:400;font-size:19px;color:var(--banana)}
+.install span{font-size:13px;color:var(--cream);line-height:1.4}
+.install .btn{margin-top:2px}
 .more{width:100%;text-align:left;background:rgba(246,241,216,.05);border:1px solid rgba(246,241,216,.08);border-radius:12px;padding:8px 12px}
 .more>summary{cursor:pointer;font-weight:700;font-size:14px;color:var(--banana);list-style:none;display:flex;justify-content:space-between;align-items:center}
 .more>summary::-webkit-details-marker{display:none}
@@ -181,6 +185,13 @@ const rnd = (a,b) => a + Math.random()*(b-a);
 const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
 const fmtR = v => 'R$ ' + Math.round(v).toLocaleString('pt-BR');
 const coarse = matchMedia('(pointer:coarse)').matches;
+// instalar como app: o navegador avisa quando dá para instalar; no iPhone só dá pelo menu Compartilhar
+let installEvt = null;
+const isInstalled = () => matchMedia('(display-mode: standalone), (display-mode: fullscreen), (display-mode: minimal-ui)').matches || navigator.standalone === true;
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const hasManifest = !!document.querySelector('link[rel="manifest"]');
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; if (typeof renderMenu === 'function' && !overlay.hidden) renderMenu(); });
+window.addEventListener('appinstalled', () => { installEvt = null; if (typeof renderMenu === 'function' && !overlay.hidden) renderMenu(); });
 const PRICE = 1.2;          // R$ por kg do cacho médio
 const REGROW = 720; // um ciclo de 6 dias para a filha virar bananeira com cacho
 // rede de estradas: linhas na direção x (estrada da frente e carreadores entre as fileiras) e duas na direção z
@@ -4415,6 +4426,17 @@ function renderMenu(){
     if (shop){ const head = shop.querySelector('.shop-head'), money = head ? head.textContent.replace(/^\D+/, '') : ''; sec('Melhorias <span style="color:var(--cream);font-weight:600;margin-left:auto;margin-right:10px">' + fmtR(save.money) + '</span>', [shop], !!lastResult || save.day > 1); }
     if (ach){ const lab = ach.previousElementSibling; sec(lab ? lab.textContent : 'Conquistas', [ach], false); if (lab) lab.remove(); }
     if (go && lead) (card.querySelector('.statsrow') || lead).after(go);
+    if (go && hasManifest && !isInstalled() && (installEvt || isIOS)){
+      const box = document.createElement('div'); box.className = 'install';
+      box.innerHTML = installEvt
+        ? '<strong>Jogue com o jogo instalado</strong><span>Abre em tela cheia, sem a barra do navegador, e roda mais liso.</span><button class="btn" id="instBtn">Instalar o jogo</button>'
+        : '<strong>Jogue com o jogo instalado</strong><span>No iPhone ou iPad: toque em <b>Compartilhar</b> e depois em <b>Adicionar à Tela de Início</b>. Depois abra pelo ícone.</span>';
+      go.before(box);
+      if (installEvt){
+        go.className = 'link'; go.textContent = 'Jogar no navegador mesmo';
+        $('instBtn').addEventListener('click', async () => { const ev = installEvt; installEvt = null; ev.prompt(); try{ await ev.userChoice; }catch(e){} renderMenu(); });
+      }
+    }
   }
   overlay.hidden = false;
   if (document.pointerLockElement) document.exitPointerLock();
