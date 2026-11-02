@@ -3765,6 +3765,46 @@ function pushTrees(p, skip){
     if (d < .6 && d > 1e-4){ p.x = t.x + dx/d*.6; p.z = t.z + dz/d*.6; }
   }
 }
+/* ---------- descanso: sem serviço, a pessoa senta numa pedra ou se escora num tronco ---------- */
+const REST_CLAIM = new Set();
+function restSpotFor(o){
+  const p = o.pos; let best = null, bd = 26;
+  for (const k of ROCKS){ if (REST_CLAIM.has(k)) continue; const d = Math.hypot(k.x - p.x, k.z - p.z); if (d < bd){ bd = d; best = k; } }
+  if (best){ const dx = p.x - best.x, dz = p.z - best.z, d = Math.hypot(dx, dz) || 1, r = best.r*.92 + .1;
+    return {key:best, type:'sit', x:best.x + dx/d*r, z:best.z + dz/d*r, yaw:Math.atan2(dx, dz)}; }
+  bd = 18; let tb = null;
+  for (const t of trees){ if (t.state !== 'grown' || REST_CLAIM.has(t) || t.claimedBy) continue; const d = Math.hypot(t.x - p.x, t.z - p.z); if (d < bd){ bd = d; tb = t; } }
+  if (tb){ const dx = p.x - tb.x, dz = p.z - tb.z, d = Math.hypot(dx, dz) || 1;
+    return {key:tb, type:'lean', x:tb.x + dx/d*.42, z:tb.z + dz/d*.42, yaw:Math.atan2(dx, dz)}; }
+  return null;
+}
+function restTick(o, dt){
+  o.noWork = (o.noWork || 0) + dt;
+  if (o.noWork < 4) return null;
+  if (!o.rest){ o.rest = restSpotFor(o); if (!o.rest) return null; REST_CLAIM.add(o.rest.key); }
+  const R = o.rest, dx = R.x - o.pos.x, dz = R.z - o.pos.z, d = Math.hypot(dx, dz);
+  if (d > .12){ const sp = 1.5, st = Math.min(d, sp*dt); o.pos.x += dx/d*st; o.pos.z += dz/d*st; o.yaw = angLerp(o.yaw, Math.atan2(dx, dz), Math.min(1, dt*8)); o.walk = (o.walk || 0) + dt*sp*2.2; return {moving:true}; }
+  o.pos.x = R.x; o.pos.z = R.z; o.yaw = angLerp(o.yaw, R.yaw, Math.min(1, dt*5));
+  return {pose:R.type};
+}
+function restClear(o){ if (o.rest) REST_CLAIM.delete(o.rest.key); o.rest = null; o.noWork = 0; o.restPose = null; }
+// pose depois do walkPose: sentado (coxas para frente, canelas para baixo) ou escorado (ombros para trás, perna cruzada)
+function restPose(R, type){
+  const br = Math.sin(now*1.3 + (R.seed || 0))*.02;
+  if (type === 'sit'){
+    R.legL.rotation.x = -1.48; R.legR.rotation.x = -1.38; R.kneeL.rotation.x = 1.42; R.kneeR.rotation.x = 1.25;
+    R.legL.rotation.z = .1; R.legR.rotation.z = -.14; if (R.ankleL){ R.ankleL.rotation.x = 0; R.ankleR.rotation.x = .1; }
+    if (R.U){ R.U.rotation.x = .16 + br; R.U.rotation.y = 0; R.U.rotation.z = 0; }
+    R.armL.rotation.x = -.62; R.armL.rotation.z = .18; if (R.elbowL) R.elbowL.rotation.x = -.7;
+    if (R.piv){ R.piv.rotation.x = .55; R.piv.rotation.y = .2; }
+  } else {
+    R.legR.rotation.x = .22; R.legR.rotation.z = -.2; R.kneeR.rotation.x = .3; R.legL.rotation.x = -.06; R.kneeL.rotation.x = .05;
+    if (R.U){ R.U.rotation.x = -.08 + br; R.U.rotation.z = .03; }
+    R.armL.rotation.x = .25; R.armL.rotation.z = .32; if (R.elbowL) R.elbowL.rotation.x = -.35;
+    if (R.piv){ R.piv.rotation.x = .2; R.piv.rotation.y = -.25; }
+  }
+}
+const SIT_DROP = .03;
 // ninguém atravessa ninguém: pessoas que encostam são empurradas para os lados (quem está parado no posto não sai do lugar)
 function separatePeople(){
   const list = [{p:player.pos, w:1}];
@@ -3803,6 +3843,7 @@ function updateWorkers(dt){
           } else w.idleT = 1.5;
         }
       }
+      if (!w.target){ const rs = restTick(w, dt); if (rs && rs.moving) moving = true; w.restPose = rs && rs.pose || null; } else if (w.rest || w.noWork) restClear(w);
       if (w.state === 'walk' && w.target){
         const dx = w.goal.x - w.pos.x, dz = w.goal.z - w.pos.z, d = Math.hypot(dx, dz), sp = 2.8;
         if (d < .15){ w.state = 'work'; w.t = w.d.time; }
@@ -3829,7 +3870,7 @@ function updateWorkers(dt){
         }
       }
     }
-    b.g.position.set(w.pos.x, heightAt(w.pos.x, w.pos.z) + (moving ? Math.abs(Math.cos(w.walk))*.05 : 0), w.pos.z); b.g.rotation.y = w.yaw;
+    b.g.position.set(w.pos.x, heightAt(w.pos.x, w.pos.z) + (moving ? Math.abs(Math.cos(w.walk))*.05 : 0) - (w.restPose === 'sit' ? SIT_DROP : 0), w.pos.z); b.g.rotation.y = w.yaw;
     b.g.rotation.z = w.stunT > 0 ? Math.sin(now*12)*.18 : 0;
     const st = moving ? Math.sin(w.walk) : 0;
     // desbaste (tirar o ladrão) é com a lurdinha, agachado; desfolha é com a foice, lá no alto
@@ -3848,6 +3889,7 @@ function updateWorkers(dt){
       else { ax = -1.6; px = -.5 + Math.sin(now*9)*.35; }
     }
     b.armL.rotation.x = ax; b.piv.rotation.x = px; b.piv.rotation.y = py;
+    if (w.restPose && !moving) restPose(b, w.restPose);
   }
 }
 for (const type of ['desumb', 'banho', 'ensaca', 'manejo', 'escora']) for (let i=0;i<save.lv[type];i++) hireWorker(type, i);
@@ -3988,8 +4030,9 @@ function updateHelpers(dt){
         }
       }
     }
+    if (game.running && h.state === 'idle' && !(h.stunT > 0) && !h.carry){ const rs = restTick(h, dt); if (rs && rs.moving) h.moving = true; h.restPose = rs && rs.pose || null; } else if (h.rest || h.noWork) restClear(h);
     const b = h.body;
-    b.g.position.set(h.pos.x, heightAt(h.pos.x, h.pos.z) + (h.moving ? Math.abs(Math.cos(h.walk))*.05 : 0), h.pos.z); b.g.rotation.y = h.yaw;
+    b.g.position.set(h.pos.x, heightAt(h.pos.x, h.pos.z) + (h.moving ? Math.abs(Math.cos(h.walk))*.05 : 0) - (h.restPose === 'sit' ? SIT_DROP : 0), h.pos.z); b.g.rotation.y = h.yaw;
     b.g.rotation.z = h.stunT > 0 ? Math.sin(now*12)*.18 : 0;
     const st = h.moving ? Math.sin(h.walk) : 0;
     walkPose(b, st, {moving:h.moving, walk:h.walk, stun:h.stunT > 0, twist:chopping ? -.2 : 0, crouch:h.state === 'toBunch' && !h.moving ? .5 : 0});
@@ -4000,6 +4043,7 @@ function updateHelpers(dt){
     }
     else if (h.carry){ b.piv.rotation.x = 1.15; b.piv.rotation.y = .2; }
     else { b.piv.rotation.x = .75; b.piv.rotation.y = .35; }
+    if (h.restPose && !h.moving) restPose(b, h.restPose);
   }
 }
 for (let i=0;i<save.lv.ajudante;i++) hireHelper(i);
@@ -5551,7 +5595,7 @@ const SHED_FLOOR = {x0:76.7, x1:91.3, z0:-1.3, z1:7.3, y:.3};
 function floorAt(x, z){ const h = heightAt(x, z); return x > SHED_FLOOR.x0 && x < SHED_FLOOR.x1 && z > SHED_FLOOR.z0 && z < SHED_FLOOR.z1 ? Math.max(h, SHED_FLOOR.y) : h; }
 (() => {
   if (M.conc){ M.conc.emissive = C('#3a3832'); M.conc.emissiveMap = M.conc.map; }
-  const FY = SHED_FLOOR.y, TANK = {x:82.2, z:1.6, x0:79.9, x1:84.5}, CUT = {x:80.9, z:1.6}, TABLE = {x:88.2, z:4.2}, PILE = {x:79.3, z:4.3}, TRUCK = {x:98.2, z:4.4}, DROP = {x:82.2, z:3.0}, STAND = {x:85.25, z:2.7}, STACK = {x:86.15, z:2.7};
+  const FY = SHED_FLOOR.y, TANK = {x:82.2, z:1.6, x0:79.9, x1:84.5}, CUT = {x:80.9, z:1.6}, TABLE = {x:88.2, z:4.2}, PILE = {x:79.3, z:4.3}, TRUCK = {x:95.4, z:4.4}, DROP = {x:82.2, z:3.0}, STAND = {x:85.25, z:2.7}, STACK = {x:86.15, z:2.7};
   const K = M.crateKit;
   const solid = (x0, x1, z0, z1) => SALE.boxes.push([x0, x1, z0, z1]);
   // paredes baixas, tanque, mesa, caixas e colunas do galpão
@@ -5647,7 +5691,16 @@ function floorAt(x, z){ const h = heightAt(x, z); return x > SHED_FLOOR.x0 && x 
   const carsIdle = () => CARS.every(c => c.state === 'idle');
   // quem é da equipe do galpão entra na conta para ninguém atravessar ninguém
   SALE.crowd = [{p:desp.g.position, fixed:true}, {p:pack.g.position, fixed:true}].concat(CARS.map(c => ({p:c.R.g.position})));
-  let despT = 0, despCur = null, packT = 0;
+  let despT = 0, despCur = null, packT = 0, despIdle = 0, packIdle = 0;
+  // banquinhos de madeira e uma coluna para a equipe descansar quando não tem serviço
+  const stool = (x, z) => { const g = new THREE.Group(), wm = L('#8a6440', {roughness:.85}); const top = new THREE.Mesh(new THREE.CylinderGeometry(.19, .19, .05, 14), wm); top.position.y = .45; g.add(top);
+    for (let k=0;k<3;k++){ const a = k*2.09, lg = new THREE.Mesh(new THREE.CylinderGeometry(.02, .026, .46, 6), wm); lg.position.set(Math.cos(a)*.12, .22, Math.sin(a)*.12); lg.rotation.set(Math.sin(a)*.14, 0, -Math.cos(a)*.14); g.add(lg); }
+    g.position.set(x, FY, z); g.traverse(o => { if (o.isMesh){ o.castShadow = o.receiveShadow = true; } }); scene.add(g); SALE.circles.push([x, z, .2]); };
+  const SPOTS = {desp:{type:'sit', x:78.2, z:2.9, yaw:Math.PI/2}, pack:{type:'lean', x:84, z:6.62, yaw:Math.PI}, cars:[{type:'sit', x:90.15, z:2.2, yaw:-Math.PI/2}, {type:'sit', x:90.75, z:2.85, yaw:-Math.PI/2}]};
+  stool(SPOTS.desp.x, SPOTS.desp.z); for (const c of SPOTS.cars) stool(c.x, c.z);
+  const npcGo = (R, x, z, dt, sp = 1.4) => { const p = R.g.position, dx = x - p.x, dz = z - p.z, d = Math.hypot(dx, dz); if (d < .08){ p.x = x; p.z = z; p.y = floorAt(x, z); return true; }
+    const st = Math.min(d, sp*dt); p.x += dx/d*st; p.z += dz/d*st; p.y = floorAt(p.x, p.z); R.g.rotation.y = angLerp(R.g.rotation.y, Math.atan2(dx, dz), Math.min(1, dt*8)); R.g.userData.walk = (R.g.userData.walk || 0) + dt*7; walkPose(R, Math.sin(R.g.userData.walk), {moving:true, walk:R.g.userData.walk}); return false; };
+  const npcRest = (R, S, dt) => { if (!npcGo(R, S.x, S.z, dt)) return; R.g.rotation.y = angLerp(R.g.rotation.y, S.yaw, Math.min(1, dt*5)); walkPose(R, 0, {}); restPose(R, S.type); R.g.position.y = floorAt(S.x, S.z) - (S.type === 'sit' ? SIT_DROP : 0); };
 
   SALE.start = () => {
     if (game.mis) return false;
@@ -5696,7 +5749,7 @@ function floorAt(x, z){ const h = heightAt(x, z); return x > SHED_FLOOR.x0 && x 
 
   SALE.update = dt => {
     // despencador: o cacho fica em pé na água e ele corta penca por penca
-    if (!despCur && SALE.queue.length){ despCur = SALE.queue.shift(); despCur.cut = 0; showTankBunch(despCur); despCur.n = tankHands.length || 5; despT = despCur.t0 = despCur.n*.6 + .7; }
+    if (!despCur && SALE.queue.length){ despIdle = 0; if (npcGo(desp, CUT.x, 2.75, dt)){ desp.g.rotation.y = Math.PI; despCur = SALE.queue.shift(); despCur.cut = 0; showTankBunch(despCur); despCur.n = tankHands.length || 5; despT = despCur.t0 = despCur.n*.6 + .7; } }
     if (despCur){
       despT -= dt; walkPose(desp, 0, {crouch:.22}); if (desp.piv) desp.piv.rotation.x = .7 + Math.sin(now*7)*.5;
       const n = despCur.n, due = Math.floor((despCur.t0 - despT)/.6);
@@ -5712,7 +5765,7 @@ function floorAt(x, z){ const h = heightAt(x, z); return x > SHED_FLOOR.x0 && x 
         float('+' + fmtR(val), new V3(CUT.x, 2.2, CUT.z), '#ffd23f');
         showTankBunch(null); despCur = null; if (desp.piv) desp.piv.rotation.x = 0;
       }
-    } else walkPose(desp, 0, {});
+    } else if (!SALE.queue.length){ despIdle += dt; if (despIdle > 3) npcRest(desp, SPOTS.desp, dt); else walkPose(desp, 0, {}); }
     // embalador: tira a penca da água e arruma na caixa plástica (2 pencas por caixa)
     // pencas boiando vão para o lado do embalador
     for (const m of SALE.pencas){ const u = m.userData; m.position.x += (u.tx - m.position.x)*Math.min(1, dt*.6); u.ph += dt; m.position.y = FY + .7 + Math.sin(u.ph*1.7)*.008; m.rotation.y += dt*.1; }
@@ -5720,13 +5773,13 @@ function floorAt(x, z){ const h = heightAt(x, z); return x > SHED_FLOOR.x0 && x 
     const pIdx = SALE.pencas.findIndex(m => m.position.x > TANK.x + .3);
     if (packT > 0){ packT -= dt; pHeld.visible = packT < .75 && packT > .1; pack.g.rotation.y = angLerp(pack.g.rotation.y, packT > .75 ? PACK_TANK : PACK_CRATE, Math.min(1, dt*5)); walkPose(pack, 0, {crouch:packT > .75 ? .35 : .15});
       if (packT <= 0){ packT = 0; pHeld.visible = false; tablePencas[SALE.fill].visible = true; SALE.fill++; if (SALE.fill >= 4){ SALE.fill = 0; SALE.ready++; tablePencas.forEach(m => { m.visible = false; }); standCi++; standCrate.material = K.mats[standCi%4]; } } }
-    else if (pIdx >= 0 && SALE.ready < 4){ scene.remove(SALE.pencas.splice(pIdx, 1)[0]); packT = 1.15; }
-    else { walkPose(pack, 0, {}); pack.g.rotation.y = angLerp(pack.g.rotation.y, PACK_TANK, Math.min(1, dt*3)); }
+    else if (pIdx >= 0 && SALE.ready < 4){ packIdle = 0; if (npcGo(pack, PACK.x, PACK.z, dt)){ pack.g.rotation.y = PACK_TANK; scene.remove(SALE.pencas.splice(pIdx, 1)[0]); packT = 1.15; } }
+    else { packIdle += dt; if (packIdle > 3 && !SALE.pencas.length) npcRest(pack, SPOTS.pack, dt); else { walkPose(pack, 0, {}); pack.g.rotation.y = angLerp(pack.g.rotation.y, PACK_TANK, Math.min(1, dt*3)); } }
     readyCrates.forEach((b, i) => { b.visible = i < SALE.ready; });
     // carregadores: cada um pega uma caixa pronta e leva até o caminhão (um não pega a mesma caixa que o outro)
     for (const c of CARS){
       const R = c.R, cg = R.g.position, go = (to, sp) => { const dx = to.x - cg.x, dz = to.z - cg.z, d = Math.hypot(dx, dz); if (d < (to === c.path[0] && c.path.length > 1 ? .3 : .08)) return true; const st = Math.min(d, sp*dt); cg.x += dx/d*st; cg.z += dz/d*st; cg.y = floorAt(cg.x, cg.z); R.g.rotation.y = angLerp(R.g.rotation.y, Math.atan2(dx, dz), Math.min(1, dt*8)); c.walk += dt*8; walkPose(R, Math.sin(c.walk), {moving:true, walk:c.walk}); return false; };
-      if (c.state === 'idle'){ walkPose(R, 0, {}); R.g.rotation.y = angLerp(R.g.rotation.y, -Math.PI/2, Math.min(1, dt*4)); c.wait -= dt; if (c.wait <= 0 && SALE.ready - CARS.filter(o => o.state === 'toPick').length > 0) c.state = 'toPick'; }
+      if (c.state === 'idle'){ c.idleT = (c.idleT || 0) + dt; if (c.idleT > 3) npcRest(R, SPOTS.cars[CARS.indexOf(c)], dt); else { walkPose(R, 0, {}); R.g.rotation.y = angLerp(R.g.rotation.y, -Math.PI/2, Math.min(1, dt*4)); } c.wait -= dt; if (c.wait <= 0 && SALE.ready - CARS.filter(o => o.state === 'toPick').length > 0){ c.state = 'toPick'; c.idleT = 0; } }
       else if (c.state === 'toPick'){ if (go(c.pick, 1.9)){ if (SALE.ready > 0){ SALE.ready--; c.held.visible = true; sfx(160, 120, .06, 'square', .02); c.state = 'toTruck'; c.path = c.way.concat([c.drop]); } else { c.state = 'back'; c.path = [c.home]; } } }
       else if (c.state === 'toTruck'){ if (go(c.path[0], 2.1)){ c.path.shift(); if (!c.path.length){ c.held.visible = false; truckCrate(SALE.onTruck++); sfx(180, 140, .08, 'square', .03); c.state = 'back'; c.path = c.way.slice().reverse().concat([c.home]); } } }
       else if (c.state === 'back'){ if (go(c.path[0], 2.1)){ c.path.shift(); if (!c.path.length){ c.state = 'idle'; c.wait = .3; } } }
