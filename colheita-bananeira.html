@@ -302,7 +302,6 @@ const UP = [
   {id:'banho',  nome:'Banhadores',           descs:['Contrata a Dona Cida: banha o cacho contra pragas, +20% no preço. Diária de R$ 55.', 'Contrata a Rosa, mais uma banhadora.', 'Contrata a Lurdes, a terceira banhadora.'], fim:'Três banhadoras trabalhando.', custos:[2210, 3740, 5780], nv:[5, 7, 9], grupo:'equipe', diaria:55},
   {id:'ensaca', nome:'Ensacadores',          descs:['Contrata o Zé: ensaca o cacho, +30% no preço e não machuca ao cair. Diária de R$ 55.', 'Contrata o Chico, mais um ensacador.', 'Contrata o Dito, o terceiro ensacador.'], fim:'Três ensacadores trabalhando.', custos:[3060, 4930, 7480], nv:[6, 8, 10], grupo:'equipe', diaria:55},
   {id:'manejo', nome:'Desbaste e desfolha', descs:['Contrata o Valdir: corta os ladrões da touceira com a foice e corta a folha com Sigatoka. Diária de R$ 45.', 'Contrata a Marli, mais uma no desbaste e desfolha.'], fim:'Dois no desbaste e desfolha.', custos:[1700, 3230], nv:[4, 7], grupo:'equipe', diaria:45},
-  {id:'escora', nome:'Escoradores', descs:['Contrata o Nilo: escora as bananeiras com bambu para o vendaval não derrubar. Diária de R$ 45.', 'Contrata o Ademir, mais um escorador.'], fim:'Dois escoradores trabalhando.', custos:[1870, 3400], nv:[5, 8], grupo:'equipe', diaria:45},
   {id:'ajudante', nome:'Ajudantes de colheita', descs:['Contrata o Juca: junta os cachos cortados e leva até a carreta. Diária de R$ 70.', 'Contrata o Neném, outro carregador de cacho. Diária de R$ 70.', 'Contrata o Toninho: corta as bananeiras e também carrega. Diária de R$ 70.'], fim:'Dois carregadores e um cortador (R$ 120 de diária por dia).', custos:[2550, 5440, 9350], nv:[6, 8, 10], grupo:'equipe', diaria:70},
   {id:'foice',   nome:'Foice afiada',        desc:'Cada foiçada tira mais vida da bananeira.',  custos:[200, 540, 1190], nv:[1, 2, 4], grupo:'colhedor'},
   {id:'luva',    nome:'Luva de couro',       desc:'Faixa verde da barra de força mais larga.',   custos:[150, 410, 880], nv:[1, 3, 5], grupo:'colhedor'},
@@ -1204,7 +1203,7 @@ function farmBare(x, z){
     if ((z > 7.4 && z < 12.6 && x > -62) || onRoad(x, z, 1.9)) continue;
     const inField = (Math.abs(x) < 23 && z > -29 && z < 7) || (x > 24 && x < 46.5 && z > -29 && z < 7) || (x < -24 && x > -46.5 && z > -29 && z < 7) || (Math.abs(x) < 22 && z > -53 && z < -31);
     if (inField) continue;
-    if (x > 76 && x < 94 && z > -2 && z < 8.5) continue;
+    if (x > 69.5 && x < 94 && z > -2 && z < 8.5) continue;
     if (x > 56 && x < 68 && z > -4 && z < 8.6) continue; // piso da garagem dos tratores
     if (farmBare(x, z)) continue;
     q.setFromAxisAngle(new V3(0,1,0), rnd(0, 6.3)); s.set(rnd(.8, 1.5), rnd(.7, 1.6), rnd(.8, 1.5)); p.set(x, heightAt(x, z), z);
@@ -3198,7 +3197,7 @@ if (Array.isArray(save.field) && save.field.length === trees.length){
     t.lad = clamp(e.l | 0, 0, 3); t.sig = !!e.s;
     if (e.r !== undefined){ startRegrow(t, Math.min(.999, e.r)); return; }
     if (!Q[e.q]) return;
-    t.esc = !!e.c;
+    t.esc = false; // escora com bambu saiu do jogo
     setQuality(t, e.q);
     t.kg = e.kg || t.kg; t.hp = Math.max(1, Math.min(Q[e.q].hp + 2, e.hp || Q[e.q].hp)); t.matureT = e.mt || t.matureT; t.desu = !!e.d; if (e.f !== undefined) t.dry = !!e.f;
     t.wash = !!e.w; t.bag = !!e.b; t.gold = !!e.g;
@@ -3213,7 +3212,7 @@ var DOCK_Y = heightAt(92.55, 3.6) + 1.06;
 // escada: ax = eixo da subida, s = sentido (+1 sobe indo para + do eixo); a = início e b = fim no eixo da subida; c0/c1 = largura no outro eixo
 const mkStair = (ax, s, a, b, c0, c1) => { const fx = ax === 'x' ? (s > 0 ? a : b) : (c0 + c1)/2, fz = ax === 'z' ? (s > 0 ? a : b) : (c0 + c1)/2, y0 = heightAt(fx, fz), R = DOCK_Y - y0, n = Math.max(2, Math.ceil(R/.19));
   return {ax, s, a, b, c0, c1, y0, n, rise:R/n, run:(b - a)/n}; };
-var STAIRS = [mkStair('x', 1, 75.45, 76.75, 5.95, 7.2), mkStair('z', -1, 7.3, 8.75, 88.4, 90.9)];
+var STAIRS = [mkStair('x', 1, 68.9, 70.2, 5.95, 7.2), mkStair('z', -1, 7.3, 8.75, 88.4, 90.9)];
 const stairT = (S, x, z) => { const u = S.ax === 'x' ? x : z; return S.s > 0 ? u - S.a : S.b - u; }; // distância andada desde o pé da escada
 const stairAt = (x, z) => STAIRS.find(S => { const u = S.ax === 'x' ? x : z, c = S.ax === 'x' ? z : x; return u >= S.a - .05 && u <= S.b + .05 && c > S.c0 && c < S.c1; });
 (() => {
@@ -3298,7 +3297,18 @@ const stairAt = (x, z) => STAIRS.find(S => { const u = S.ax === 'x' ? x : z, c =
   sAdd(new THREE.BoxGeometry(SW + 1.4, .08, .35), roofM, 0, 5.82, 0);
   // mureta de tijolo no fundo e na lateral, com reboco por cima
   sAdd(new THREE.BoxGeometry(SW, 1.1, .2), brick, 0, .85, -3.95);
-  sAdd(new THREE.BoxGeometry(.2, 1.1, 6.6), brick, -6.95, .85, -.7); // vão no fim da mureta: chegada da escada
+  // puxado da descarga no lado oeste (x local -13.8 a -7.3): piso, pilares, telhado, muretas e faixas pintadas no chão
+  { const EX = -10.55, EW = 6.5, H = DOCK_Y + .8;
+    sAdd(new THREE.BoxGeometry(EW + .3, H, SD + .6), conc, EX - .15, .3 - H/2, 0);
+    for (const z of [-4, 4]){ sAdd(new THREE.BoxGeometry(.25, 4.3, .25), conc, -13.8, 2.45, z); sAdd(new THREE.BoxGeometry(EW + .25, .3, .22), conc, EX, 4.5, z); }
+    for (const x of [-13.8, EX]){ for (const sd of [-1, 1]){ const c = sAdd(new THREE.BoxGeometry(.08, .1, 4.5), steel, x, 5.1, sd*2.05); c.rotation.x = sd*.3; } sAdd(new THREE.BoxGeometry(.06, .06, SD), steel, x, 4.66, 0); }
+    for (const sd of [-1, 1]){ const rg = new THREE.PlaneGeometry(EW + .2, 4.75, 80, 1), rp = rg.attributes.position; for (let i=0;i<rp.count;i++) rp.setZ(i, Math.sin(rp.getX(i)*Math.PI*2/.18)*.025); rg.computeVertexNormals(); rg.rotateX(-Math.PI/2); const roof = sAdd(rg, roofM, EX - .1, 5.12, sd*2.12); roof.rotation.x = sd*.3; }
+    sAdd(new THREE.BoxGeometry(EW + .2, .08, .35), roofM, EX - .1, 5.82, 0);
+    sAdd(new THREE.BoxGeometry(EW, 1.1, .2), brick, EX, .85, -3.95); sAdd(new THREE.BoxGeometry(EW, .06, .26), conc, EX, 1.42, -3.95);
+    sAdd(new THREE.BoxGeometry(.2, 1.1, 6.6), brick, -13.65, .85, -.7); // mureta oeste, com vão para a escada
+    const paint = L('#e8c547', {roughness:.7}); // faixas amarelas marcando a área de descarga
+    for (const [x, z, w, d] of [[-10.4, -2.45, 5.2, .08], [-10.4, 1.25, 5.2, .08], [-12.96, -.6, .08, 3.78], [-7.84, -.6, .08, 3.78]]) sAdd(new THREE.BoxGeometry(w, .012, d), paint, x, .306, z);
+  }
   sAdd(new THREE.BoxGeometry(SW, .06, .26), conc, 0, 1.42, -3.95);
   // um tanque só, comprido, com água: o cacho é despencado dentro dele e as pencas ficam boiando
   const water = new THREE.MeshStandardMaterial({color:C('#5f8f8a'), roughness:.08, metalness:.1, transparent:true, opacity:.85});
@@ -3340,30 +3350,56 @@ const stairAt = (x, z) => STAIRS.find(S => { const u = S.ax === 'x' ? x : z, c =
   }
 })();
 /* ---------- garagem dos tratores ---------- */
-const GARAGE = {x0:56.4, x1:67.6, z0:-3.4, z1:8.0, bays:[59.4, 64.6], z:5.6, boxes:[]}; // cabe o trator com a carreta gigante, de frente para a estrada
+const GARAGE = {x0:56.4, x1:67.6, z0:-3.4, z1:8.0, bays:[59.4, 64.6], z:5.6, boxes:[], hammock:null}; // cabe o trator com a carreta gigante, de frente para a estrada
+// rancho de madeira para os tratores: pilares de eucalipto roliço, telhado de zinco enferrujado, parede de tábua velha e chão de terra
 (() => {
   const G = new THREE.Group(), y0 = heightAt(62, 3);
-  const conc = M.conc || L('#a9a69d'), brick = L('#b05a36', {roughness:.9}), steel = L('#5d6266', {roughness:.5, metalness:.5}), roofM = L('#9aa0a2', {roughness:.6, metalness:.3, side:THREE.DoubleSide});
+  const bark = tex(64, 256, (g, w, h) => { g.fillStyle = '#6b5440'; g.fillRect(0, 0, w, h); for (let i=0;i<260;i++){ g.fillStyle = pick(['rgba(40,30,20,.35)', 'rgba(150,130,100,.25)', 'rgba(90,70,50,.4)']); g.fillRect(rnd(0, w), rnd(0, h), rnd(1, 4), rnd(8, 40)); } });
+  const plank = tex(256, 256, (g, w, h) => { for (let x=0;x<w;x+=32){ const c = pick(['#7d6a55', '#8a7660', '#6e5d4b', '#94816a', '#5f5142']); g.fillStyle = c; g.fillRect(x, 0, 30, h); for (let i=0;i<40;i++){ g.fillStyle = pick(['rgba(30,25,20,.25)', 'rgba(200,190,170,.12)']); g.fillRect(x + rnd(0, 30), rnd(0, h), 1, rnd(10, 80)); } g.fillStyle = 'rgba(20,15,10,.8)'; g.fillRect(x + 30, 0, 2, h); g.fillStyle = 'rgba(40,30,20,.6)'; for (const y of [30, 220]){ g.beginPath(); g.arc(x + 15, y, 2, 0, 7); g.fill(); } } });
+  const rust = tex(256, 256, (g, w, h) => { g.fillStyle = '#8f8f88'; g.fillRect(0, 0, w, h); for (let i=0;i<180;i++){ g.fillStyle = pick(['rgba(140,70,30,.45)', 'rgba(110,50,20,.5)', 'rgba(170,100,50,.35)', 'rgba(60,60,55,.3)']); g.beginPath(); g.ellipse(rnd(0, w), rnd(0, h), rnd(3, 26), rnd(3, 18), rnd(0, 3), 0, 7); g.fill(); } for (let x=0;x<w;x+=16){ g.fillStyle = 'rgba(0,0,0,.15)'; g.fillRect(x, 0, 3, h); } });
+  const barkM = L('#ffffff', {map:bark, roughness:.95}), plankM = L('#ffffff', {map:plank, roughness:.92}), zincM = L('#ffffff', {map:rust, roughness:.75, metalness:.35, side:THREE.DoubleSide});
+  const woodM = L('#7a5a3a', {roughness:.85}), dark = L('#2a2622', {roughness:.9});
   const add = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; G.add(m); return m; };
-  const W = GARAGE.x1 - GARAGE.x0, D = GARAGE.z1 - GARAGE.z0, cx = (GARAGE.x0 + GARAGE.x1)/2, cz = (GARAGE.z0 + GARAGE.z1)/2;
-  add(new THREE.BoxGeometry(W, .16, D), conc, cx, .04, cz);
-  // fundo de tijolo e laterais até a metade
-  add(new THREE.BoxGeometry(W, 3.2, .22), brick, cx, 1.6, GARAGE.z0 + .11); GARAGE.boxes.push([GARAGE.x0, GARAGE.x1, GARAGE.z0, GARAGE.z0 + .25]);
-  for (const x of [GARAGE.x0 + .11, GARAGE.x1 - .11]){ add(new THREE.BoxGeometry(.22, 3.2, D*.55), brick, x, 1.6, GARAGE.z0 + D*.275); GARAGE.boxes.push([x - .14, x + .14, GARAGE.z0, GARAGE.z0 + D*.55]); }
-  // pilares, vigas e telhado de uma água
-  for (const x of [GARAGE.x0 + .12, cx, GARAGE.x1 - .12]){ add(new THREE.BoxGeometry(.2, 3.6, .2), conc, x, 1.8, GARAGE.z1 - .12); GARAGE.boxes.push([x - .14, x + .14, GARAGE.z1 - .26, GARAGE.z1]); }
-  add(new THREE.BoxGeometry(W + .3, .25, .25), conc, cx, 3.6, GARAGE.z1 - .12);
-  { const r = add(new THREE.BoxGeometry(W + 1, .06, D + 1.2), roofM, cx, 3.75, cz); r.rotation.x = -.06; }
-  // divisória baixa entre as duas vagas, bancada com ferramentas, pneu e tambor
-  add(new THREE.BoxGeometry(.15, .5, 1.6), conc, cx, .3, GARAGE.z0 + .8);
-  add(new THREE.BoxGeometry(2.2, .08, .7), L('#7a5a3a', {roughness:.8}), GARAGE.x0 + 1.6, .92, GARAGE.z0 + .6);
-  for (const dx of [-1, 1]) add(new THREE.BoxGeometry(.06, .9, .6), steel, GARAGE.x0 + 1.6 + dx*1, .45, GARAGE.z0 + .6);
-  add(new THREE.BoxGeometry(.5, .25, .3), L('#b8322a', {roughness:.5}), GARAGE.x0 + 1.2, 1.08, GARAGE.z0 + .55); // caixa de ferramenta
-  GARAGE.boxes.push([GARAGE.x0, GARAGE.x0 + 2.8, GARAGE.z0, GARAGE.z0 + 1.0]);
-  { const tire = add(new THREE.TorusGeometry(.42, .16, 10, 20), L('#1c1c1c', {roughness:.9}), GARAGE.x1 - .9, .58, GARAGE.z0 + .5); tire.rotation.y = .3; }
-  { const drum = add(new THREE.CylinderGeometry(.3, .3, .9, 16), L('#2f6fb0', {roughness:.5, metalness:.3}), GARAGE.x1 - .7, .45, GARAGE.z0 + 1.5); GARAGE.boxes.push([GARAGE.x1 - 1.4, GARAGE.x1, GARAGE.z0, GARAGE.z0 + 2]); }
-  // colchonete de descanso
-  add(new THREE.BoxGeometry(.75, .06, 1.9), L('#3d6a8a', {roughness:.9}), cx, .1, 2.4);
+  const box = (x0, x1, z0, z1) => GARAGE.boxes.push([x0, x1, z0, z1]);
+  const { x0, x1, z0, z1 } = GARAGE, cx = (x0 + x1)/2, D = z1 - z0;
+  // terra batida com mancha de óleo e palha
+  { const dg = new THREE.PlaneGeometry(x1 - x0 + .6, D + .6, 24, 24).rotateX(-Math.PI/2), dp = dg.attributes.position, zc = (z0 + z1)/2; for (let i=0;i<dp.count;i++) dp.setY(i, heightAt(cx + dp.getX(i), zc + dp.getZ(i)) - y0 + .04); dg.computeVertexNormals(); // terra acompanha o terreno
+    const dirt = new THREE.Mesh(dg, L('#7a6248', {roughness:1})); dirt.position.set(cx, 0, zc); dirt.receiveShadow = true; G.add(dirt);
+    for (const [x, z, r] of [[59.6, 6.2, .7], [64.8, 6.0, .55]]){ const o = new THREE.Mesh(new THREE.CircleGeometry(r, 16).rotateX(-Math.PI/2), L('#2b241d', {roughness:.3})); o.position.set(x, heightAt(x, z) - y0 + .055, z); G.add(o); } }
+  // pilares de eucalipto (frente alta, fundo mais baixo: caimento para trás) e um no meio para a rede
+  const post = (x, z, h) => { const p = add(new THREE.CylinderGeometry(.1, .13, h, 9), barkM, x, h/2, z); p.rotation.z = rnd(-.03, .03); box(x - .18, x + .18, z - .18, z + .18); };
+  for (const x of [x0 + .15, cx, x1 - .15]){ post(x, z1 - .15, 3.7); post(x, z0 + .15, 2.9); }
+  post(cx, .6, 3.3);
+  // terças e caibros de madeira
+  for (const z of [z0 + .15, z1 - .15]){ const h = z > 0 ? 3.7 : 2.9; add(new THREE.BoxGeometry(x1 - x0 + .4, .14, .12), woodM, cx, h - .05, z); }
+  const slope = Math.atan2(3.7 - 2.9, D);
+  for (let x = x0 + .3; x < x1; x += 1.1){ const r = add(new THREE.BoxGeometry(.08, .1, D + .5), woodM, x, 3.35, (z0 + z1)/2); r.rotation.x = slope; }
+  // telhas de zinco enferrujadas, uma do lado da outra, meio tortas
+  for (let x = x0 - .3; x < x1 + .3; x += .95){ const t = new THREE.PlaneGeometry(1.0, D + 1.1, 1, 1).rotateX(-Math.PI/2); const m = add(t, zincM, x + .5, 3.45 + rnd(-.02, .02), (z0 + z1)/2); m.rotation.x = slope; m.rotation.z = rnd(-.015, .015); }
+  // parede de tábua no fundo e meia parede nos lados
+  { const back = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, 2.7, .06), plankM); back.position.set(cx, 1.35, z0 + .05); back.castShadow = back.receiveShadow = true; G.add(back); box(x0, x1, z0, z0 + .2);
+    for (const x of [x0 + .03, x1 - .03]){ const s = new THREE.Mesh(new THREE.BoxGeometry(.06, 1.6, D*.6), plankM); s.position.set(x, .8, z0 + D*.3); s.castShadow = s.receiveShadow = true; G.add(s); box(x - .12, x + .12, z0, z0 + D*.6); } }
+  // bancada de tábua com morsa e ferramentas
+  { const bx = x0 + 1.5, bz = z0 + .55; add(new THREE.BoxGeometry(2.2, .07, .7), woodM, bx, .9, bz); for (const dx of [-1, 1]) for (const dz of [-.28, .28]) add(new THREE.BoxGeometry(.08, .9, .08), woodM, bx + dx*.98, .45, bz + dz);
+    add(new THREE.BoxGeometry(.18, .14, .22), L('#3d5a7a', {roughness:.5, metalness:.5}), bx - .6, 1.0, bz); add(new THREE.BoxGeometry(.5, .2, .25), L('#b8322a', {roughness:.5}), bx + .4, 1.04, bz);
+    add(new THREE.CylinderGeometry(.15, .15, .35, 12), L('#c9a227', {roughness:.5}), bx + 1.4, .18, bz + .1); box(x0, x0 + 2.8, z0, z0 + 1.0); }
+  // pneus velhos empilhados, tambor enferrujado, galão e lenha
+  for (let k=0;k<3;k++){ const t = add(new THREE.TorusGeometry(.4, .15, 10, 22), L('#1c1c1c', {roughness:.95}), x1 - 1.0, .15 + k*.3, z0 + .7); t.rotation.x = Math.PI/2; t.rotation.z = rnd(0, 1); }
+  box(x1 - 1.6, x1, z0, z0 + 1.3);
+  { const d = add(new THREE.CylinderGeometry(.3, .3, .9, 16), L('#ffffff', {map:rust, roughness:.7, metalness:.4}), x1 - .6, .45, z0 + 1.9); box(x1 - 1, x1, z0 + 1.5, z0 + 2.3); }
+  add(new THREE.BoxGeometry(.3, .4, .18), L('#2f6a3a', {roughness:.5}), x1 - 1.15, .2, z0 + 2.0);
+  for (let k=0;k<14;k++){ const l = add(new THREE.CylinderGeometry(.07, .08, .9, 7), barkM, x0 + .45, .08 + Math.floor(k/5)*.14, z0 + 1.4 + (k%5)*.16); l.rotation.x = Math.PI/2; }
+  // rede de dormir entre o pilar do fundo e o do meio, balança devagar
+  { const a = new V3(cx, 1.55, z0 + .3), b = new V3(cx, 1.55, .45), Lh = a.distanceTo(b), hg = new THREE.Group(); hg.position.set(cx, 1.55, (a.z + b.z)/2); G.add(hg);
+    const sw = new THREE.Group(); hg.add(sw);
+    // pano da rede: comprido no eixo z, faz barriga no meio e as bordas sobem (formato de concha)
+    const len = Lh*.74, cloth = new THREE.PlaneGeometry(.95, len, 10, 24).rotateX(-Math.PI/2), cp = cloth.attributes.position;
+    for (let i=0;i<cp.count;i++){ const u = cp.getZ(i)/(len/2), v = cp.getX(i)/.475; cp.setY(i, -.5*(1 - u*u) + .32*v*v*(1 - .6*u*u)); cp.setX(i, cp.getX(i)*(1 - .5*u*u)); }
+    cloth.computeVertexNormals();
+    const clothT = tex(128, 128, (g, w, h) => { const cs = ['#c0392b', '#e8b130', '#2f7a4a', '#f2e6c0', '#2f5fa8']; for (let y=0;y<h;y+=8){ g.fillStyle = cs[(y/8)%cs.length]; g.fillRect(0, y, w, 8); } });
+    const cm = new THREE.Mesh(cloth, L('#ffffff', {map:clothT, roughness:.95, side:THREE.DoubleSide})); cm.castShadow = true; sw.add(cm);
+    for (const s of [-1, 1]){ const rope = new THREE.Mesh(new THREE.CylinderGeometry(.012, .012, Lh*.16, 5), L('#d8c9a0')); rope.rotation.x = Math.PI/2; rope.position.z = s*Lh*.42; sw.add(rope); }
+    GARAGE.hammock = {g:hg, sw, y:1.55, z:(a.z + b.z)/2}; box(cx - .5, cx + .5, z0, .6); }
   G.position.y = y0; scene.add(G);
 })();
 // dia sem corte: tratores desligados na garagem e os tratoristas fazendo manutenção ou descansando
@@ -3379,8 +3415,9 @@ function setGarage(on){
     if (on && !c && T.drvLook){
       const R = makePerson(T.drvLook.shirt, null, Object.assign({}, T.drvLook.opt)); if (R.setTool) R.setTool('none');
       const wr = new THREE.Mesh(new THREE.BoxGeometry(.03, .03, .26), L('#9aa0a6', {roughness:.3, metalness:.8})); wr.position.set(0, 0, .12); if (R.piv) R.piv.add(wr);
-      R.g.traverse(o => { if (o.isMesh) o.castShadow = true; }); scene.add(R.g);
+      R.g.traverse(o => { if (o.isMesh) o.castShadow = true; });
       c = garageCrew[i] = {R, job:i === 0 ? 'fix' : 'rest'};
+      if (c.job === 'rest' && GARAGE.hammock){ GARAGE.hammock.sw.add(R.g); wr.visible = false; } else scene.add(R.g);
     }
     if (c) c.R.g.visible = on;
   });
@@ -3397,11 +3434,13 @@ function updateGarageCrew(){
       if (R.piv){ R.piv.rotation.x = .9 + Math.sin(now*5)*.35; R.piv.rotation.y = .1; }
       if (R.armL){ R.armL.rotation.x = -.9; R.armL.rotation.z = .2; }
     } else {
-      // deitado de costas no colchonete, mãos na barriga
-      R.g.rotation.order = 'YXZ'; R.g.rotation.set(-Math.PI/2, Math.PI, 0); R.g.position.set((GARAGE.x0 + GARAGE.x1)/2, y0 + .26, 3.3);
+      // cochilando na rede: deitado de costas, uma perna dobrada, braços cruzados na barriga; a rede balança devagar
+      if (GARAGE.hammock) GARAGE.hammock.sw.rotation.z = Math.sin(now*.9)*.09;
+      R.g.rotation.order = 'XYZ'; R.g.rotation.set(-Math.PI/2 + .1, 0, 0); R.g.position.set(0, -.36, .85);
       walkPose(R, 0, {});
-      if (R.U) R.U.rotation.x = Math.sin(now*1.1)*.015;
-      if (R.armL){ R.armL.rotation.x = -.5; R.armL.rotation.z = .5; } if (R.piv){ R.piv.rotation.x = .5; R.piv.rotation.y = -.5; }
+      R.legR.rotation.x = -.45; R.kneeR.rotation.x = .85; R.legL.rotation.x = -.05; R.legL.rotation.z = .06;
+      if (R.U) R.U.rotation.x = .12 + Math.sin(now*1.1)*.012;
+      if (R.armL) R.armL.rotation.set(-.15, 0, .35); if (R.elbowL) R.elbowL.rotation.x = -1.9; if (R.piv) R.piv.rotation.set(.1, -.3, 0);
     }
   });
 }
@@ -3650,18 +3689,10 @@ function updateSeason(dt){
   // vendaval: avisa, venta forte e bananeira sem escora com cacho pesado pode tombar
   const g = game.gale; let target = 0;
   if (g && game.running){
-    if (!g.warned && el > g.at - 7){ g.warned = true; toast('Vem vendaval aí! Bananeira sem escora pode tombar'); }
+    if (!g.warned && el > g.at - 7){ g.warned = true; toast('Vem vendaval aí! Segura o chapéu'); }
     if (el > g.at && el < g.at + g.dur){
       target = 1;
-      if (gustV > .5) for (const t of trees){
-        if (t.state !== 'grown' || t.esc || t.q === 'umbigo' || charge.tree === t) continue;
-        const wq = t.q === 'gordo' ? 2.2 : t.q === 'medio' ? 1.4 : 1;
-        if (Math.random() < dt*.006*wq*gustV){
-          t.tomb = true; game.tombs = (game.tombs || 0) + 1;
-          fellTree(t, new V3(t.x - galeDir.x, 0, t.z - galeDir.z));
-          if (Math.hypot(t.x - player.pos.x, t.z - player.pos.z) < 22) float('Tombou no vento!', new V3(t.x, 3, t.z), '#ffb199');
-        }
-      }
+      // vendaval só balança o bananal (a escora com bambu saiu do jogo)
     }
   }
   gustV += (target - gustV)*Math.min(1, dt*.7);
@@ -4050,7 +4081,7 @@ function separatePeople(){
   const list = [{p:player.pos, w:1}];
   for (const w of workers) list.push({p:w.pos, w:1});
   for (const h of helpers) list.push({p:h.pos, w:1});
-  if (typeof SALE !== 'undefined' && SALE.crowd) for (const c of SALE.crowd) list.push({p:c.p, w:c.fixed ? 0 : 1});
+  if (typeof SALE !== 'undefined' && SALE.crowd) for (const c of SALE.crowd) if (!c.off) list.push({p:c.p, w:c.fixed ? 0 : 1});
   const R = .62;
   for (let i=0;i<list.length;i++) for (let j=i + 1;j<list.length;j++){
     const a = list[i], b = list[j], dx = b.p.x - a.p.x, dz = b.p.z - a.p.z, d2 = dx*dx + dz*dz, tw = a.w + b.w;
@@ -4135,7 +4166,7 @@ function updateWorkers(dt){
     if (w.restPose && !moving) restPose(b, w.restPose);
   }
 }
-for (const type of ['desumb', 'banho', 'ensaca', 'manejo', 'escora']) for (let i=0;i<save.lv[type];i++) hireWorker(type, i);
+for (const type of ['desumb', 'banho', 'ensaca', 'manejo']) for (let i=0;i<save.lv[type];i++) hireWorker(type, i);
 
 /* ---------- ajudantes de colheita ---------- */
 const HELPERS = [
@@ -4173,7 +4204,7 @@ function stepTo(h, sp, dt){
   if (d < .15) return true;
   const ws = walkStall(h, d, dt);
   if (ws === 'arrive') return true;
-  if (ws === 'giveup' && h.state !== 'carry'){ const o = h.target || h.bunch; if (o) o.avoidT = now + 12; releaseHelper(h); return false; }
+  if (ws === 'giveup' && h.state !== 'carry' && h.state !== 'sale'){ const o = h.target || h.bunch; if (o) o.avoidT = now + 12; releaseHelper(h); return false; }
   h.pos.x += dx/d*Math.min(d, sp*dt); h.pos.z += dz/d*Math.min(d, sp*dt);
   pushTrees(h.pos, h.target);
   h.yaw = angLerp(h.yaw, Math.atan2(dx, dz), Math.min(1, dt*10)); h.walk += dt*sp*2.2; h.moving = true;
@@ -4212,6 +4243,19 @@ function updateHelpers(dt){
     h.moving = false; let chopping = false;
     if (h.stunT > 0) h.stunT -= dt;
     else if (game.running){
+      if (SALE.on && h.state === 'idle' && !h.carry && SALE.pile.length && now - (SALE.pAct || 0) > 4){ restClear(h); h.state = 'sale'; h.ss = 0; h.sx = h.pos.x; }
+      if (h.state === 'sale'){
+        // caminho: pé da escada oeste, topo, pilha da descarga, tanque, e volta para a pilha enquanto tiver cacho
+        const P = SALE.PILE_P, Dp = SALE.DROP_P, k = helpers.indexOf(h);
+        const W = [{x:h.sx, z:10.7 + k*.4}, {x:68.0 - k*.3, z:10.7 + k*.4}, {x:68.3, z:6.6}, {x:71.4, z:6.6}, {x:P.x + 1.2 + k*.5, z:P.z + 1.9}, {x:Dp.x - .6 + k*.6, z:Dp.z + .15}, {x:71.4, z:6.6}, {x:68.3, z:6.6}][h.ss]; // vai pela estrada, sobe pela escada oeste
+        h.goal.set(W.x, 0, W.z);
+        if (stepTo(h, 2.4, dt)){
+          if (h.ss === 4){ if (SALE.pile.length){ h.carry = SALE.pile.pop(); SALE.refreshPile(); showHelperCarry(h); h.ss = 5; } else h.ss = 6; }
+          else if (h.ss === 5){ SALE.queue.push(h.carry); h.carry = null; showHelperCarry(h); snd.splash && snd.splash(); h.ss = SALE.pile.length ? 4 : 6; }
+          else if (h.ss >= 7 || !SALE.on){ h.state = 'idle'; h.idleT = 1; }
+          else h.ss++;
+        }
+      } else
       if (h.state === 'idle'){
         h.idleT -= dt;
         if (h.idleT <= 0){
@@ -4279,7 +4323,7 @@ function updateHelpers(dt){
     }
     if (game.running && h.state === 'idle' && !(h.stunT > 0) && !h.carry){ const rs = restTick(h, dt); if (rs && rs.moving) h.moving = true; h.restPose = rs && rs.pose || null; } else if (h.rest || h.noWork) restClear(h);
     const b = h.body;
-    b.g.position.set(h.pos.x, heightAt(h.pos.x, h.pos.z) + (h.moving ? Math.abs(Math.cos(h.walk))*.05 : 0) - (h.restPose && h.rest ? h.rest.drop || 0 : 0), h.pos.z); b.g.rotation.y = h.yaw;
+    b.g.position.set(h.pos.x, floorAt(h.pos.x, h.pos.z) + (h.moving ? Math.abs(Math.cos(h.walk))*.05 : 0) - (h.restPose && h.rest ? h.rest.drop || 0 : 0), h.pos.z); b.g.rotation.y = h.yaw;
     b.g.rotation.z = h.stunT > 0 ? Math.sin(now*12)*.18 : 0;
     const st = h.moving ? Math.sin(h.walk) : 0;
     walkPose(b, st, {moving:h.moving, walk:h.walk, stun:h.stunT > 0, twist:chopping ? -.2 : 0, crouch:h.state === 'toBunch' && !h.moving ? .5 : 0});
@@ -4358,7 +4402,7 @@ function resetDay(){
   player.stam = 1; player.tired = false;
   resetMonkey();
   overnight();
-  setupMission(); setGarage(!!game.mis);
+  setupMission(); setGarage(!!game.mis); SALE.present(!game.mis);
   if (game.mis) game.order = null;
 }
 
@@ -4651,7 +4695,7 @@ const fpPiv = new THREE.Group(); fpPiv.rotation.order = 'YXZ'; fpPiv.position.se
 }
 // ferramenta do dia: no banho, bomba costal nas costas e lança na mão
 function setPlayerTool(){
-  const task = game.mis && game.mis.m.task, name = task === 'banhar' ? 'bomba' : task === 'ensacar' ? 'ensaca' : 'foice';
+  const task = game.mis && game.mis.m.task, name = setPlayerTool.dock ? 'none' : task === 'banhar' ? 'bomba' : task === 'ensacar' ? 'ensaca' : 'foice'; // no galpão a ferramenta fica guardada
   P.setTool(name); fpPiv.userData.setTool(name);
 }
 const fpCarry = new THREE.Group(); fpCarry.position.set(0, -.55, -.95); fpRig.add(fpCarry);
@@ -4732,6 +4776,7 @@ function update(dt){
   walkPose(P, st, {moving:p.moving, walk:p.walk, running:p.running, stun:p.stunT > 0,
     crouch:p.crouchT > 0 ? Math.sin(Math.PI*(1 - p.crouchT/.4)) : 0,
     twist:(swing.active || charge.active) ? -.25*charge.cv : 0});
+  { const dk = inDock(p.pos.x, p.pos.z) || !!stairAt(p.pos.x, p.pos.z); if (dk !== !!setPlayerTool.dock){ setPlayerTool.dock = dk; setPlayerTool(); } }
   p.grp.position.y = floorAt(p.pos.x, p.pos.z) + (p.moving ? Math.abs(Math.cos(p.walk))*.05 : 0);
   const carrying = p.carry.length > 0;
   P.armL.rotation.x = carrying ? -2.6 : -st*.5;
@@ -5850,7 +5895,7 @@ function farmSolids(p){
 
 /* ---------- venda no galpão: o colhedor tira os cachos da carreta e põe no tanque d'água; o despencador corta as pencas dentro da água, o embalador arruma nas caixas plásticas e o carregador leva até o caminhão ---------- */
 var SALE = {on:false, queue:[], pile:[], pencas:[], fill:0, ready:0, onTruck:0, boxes:[], circles:[], leaving:0};
-const SHED_FLOOR = {x0:76.7, x1:91.3, z0:-1.3, z1:7.3, y:DOCK_Y};
+const SHED_FLOOR = {x0:70.2, x1:91.3, z0:-1.3, z1:7.3, y:DOCK_Y};
 const inDock = (x, z) => x > SHED_FLOOR.x0 && x < SHED_FLOOR.x1 && z > SHED_FLOOR.z0 && z < SHED_FLOOR.z1;
 function floorAt(x, z){
   const h = heightAt(x, z);
@@ -5861,11 +5906,11 @@ function floorAt(x, z){
 }
 (() => {
   if (M.conc){ M.conc.emissive = C('#3a3832'); M.conc.emissiveMap = M.conc.map; }
-  const FY = SHED_FLOOR.y, TANK = {x:82.2, z:1.6, x0:79.9, x1:84.5}, CUT = {x:80.9, z:1.6}, TABLE = {x:88.2, z:4.2}, PILE = {x:79.3, z:4.3}, TRUCK = {x:92.55, z:3.6}, DROP = {x:82.2, z:3.0}, STAND = {x:85.25, z:2.7}, STACK = {x:86.15, z:2.7};
+  const FY = SHED_FLOOR.y, TANK = {x:82.2, z:1.6, x0:79.9, x1:84.5}, CUT = {x:80.9, z:1.6}, TABLE = {x:88.2, z:4.2}, PILE = {x:73.6, z:2.4}, TRUCK = {x:92.55, z:3.6}, DROP = {x:82.2, z:3.0}, STAND = {x:85.25, z:2.7}, STACK = {x:86.15, z:2.7};
   const K = M.crateKit;
   const solid = (x0, x1, z0, z1) => SALE.boxes.push([x0, x1, z0, z1]);
   // paredes baixas, tanque, mesa, caixas e colunas do galpão
-  solid(76.8, 91.3, -1.2, -.75); solid(76.8, 77.25, -1.3, 5.6); // a mureta oeste para antes da escada
+  solid(70.3, 91.3, -1.2, -.75); solid(70.3, 70.75, -1.3, 5.6); // muretas do fundo e do oeste (com o vão da escada)
   solid(79.75, 84.65, .75, 2.45); solid(86.9, 89.4, -.15, 1.2); solid(78.1, 79.9, 5.4, 5.85);
   solid(84.9, 86.5, 2.45, 2.95);
   // cavalete baixo ao lado do tanque, onde a caixa é enchida
@@ -5921,10 +5966,12 @@ function floorAt(x, z){
 
   // pilha de cachos no estrado (o que o trator descarregou durante o dia)
   const pileG = new THREE.Group(); pileG.position.set(PILE.x, FY, PILE.z); scene.add(pileG);
-  { const pal = new THREE.Mesh(new THREE.BoxGeometry(1.6, .12, 1.1), L('#8a6a44', {roughness:.9})); pal.position.y = .06; pal.receiveShadow = true; pileG.add(pal); }
+  { const wd = L('#8a6a44', {roughness:.9}); for (let r=0;r<3;r++) for (let c=0;c<2;c++){ const pal = new THREE.Mesh(new THREE.BoxGeometry(2.3, .12, 1.15), wd); pal.position.set((c - .5)*2.4, .06, (r - 1)*1.2); pal.receiveShadow = true; pileG.add(pal); }
+    const signT = tex(256, 64, g => { g.fillStyle = '#2f5d2a'; g.fillRect(0, 0, 256, 64); g.fillStyle = '#f2e6c0'; g.font = 'bold 34px Arial Black, sans-serif'; g.textAlign = 'center'; g.fillText('DESCARGA', 128, 45); });
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.8, .45), L('#ffffff', {map:signT})); sign.position.set(0, 1.75, -3.18); pileG.add(sign); }
   const pileBunches = new THREE.Group(); pileG.add(pileBunches);
   SALE.refreshPile = () => { while (pileBunches.children.length) pileBunches.remove(pileBunches.children[0]);
-    SALE.pile.slice(0, 9).forEach((c, i) => { const b = makeBunch(c.q, c.bruised, c); b.rotation.set(0, (i%3 - 1)*.25, Math.PI/2); b.scale.setScalar(.8); b.position.set(((i%3) - 1)*.5, .3 + Math.floor(i/3)*.28, ((Math.floor(i/3)%2) - .5)*.3); pileBunches.add(b); }); };
+    SALE.pile.slice(0, 36).forEach((c, i) => { const k = i%18, lay = Math.floor(i/18), col = k%6, row = Math.floor(k/6); const b = makeBunch(c.q, c.bruised, c); b.rotation.set(0, (col%2 ? .12 : -.12), Math.PI/2); b.scale.setScalar(.8); b.position.set((col - 2.5)*.78 + lay*.3, .32 + lay*.3, (row - 1)*1.2); pileBunches.add(b); }); };
 
   // cacho em pé dentro da água: o engaço continua inteiro e as pencas saem uma por uma
   let tankBunch = null, tankHands = [];
@@ -5966,14 +6013,17 @@ function floorAt(x, z){
   SALE.circles.push([desp.g.position.x, desp.g.position.z, .35], [pack.g.position.x, pack.g.position.z, .35]);
   // dois carregadores: esperam do lado da pilha, pegam a caixa cheia e levam ao caminhão contornando a mesa
   const PICK = new V3(86.15, FY, 3.25), TO_TRUCK = [new V3(86.4, FY, 5.5), new V3(91.6, 0, 5.7)], DROPS = [new V3(91.75, FY, 3.0), new V3(91.75, FY, 4.3)]; SALE.bedOn = true; // anda em cima da carroceria para largar a caixa
-  const CARS = [['#4a6a9a', {skin:'#e0ac7e', scarf:L('#a03050')}, new V3(87, FY, 3.3)], ['#8a6a3a', {cap:'#3a5a2a', skin:'#8a5432'}, new V3(87.6, FY, 3.15)]].map(([shirt, opt, home], i) => {
+  const CARS = [['#4a6a9a', {skin:'#e0ac7e', scarf:L('#a03050')}, new V3(87.4, FY, 4.4)], ['#8a6a3a', {cap:'#3a5a2a', skin:'#8a5432'}, new V3(88.3, FY, 4.1)]].map(([shirt, opt, home], i) => {
     const R = mk(shirt, 'faca', opt, home.x, home.z, -Math.PI/2); if (R.piv) R.piv.visible = false;
     const held = fullCrate(i + 1); held.position.set(0, 1.0, .36); held.rotation.y = Math.PI/2; held.visible = false; R.g.add(held);
-    return {R, held, home, path:[], state:'idle', walk:rnd(0, 6), wait:i*1.5, drop:DROPS[i], pick:i ? new V3(86.9, FY, 3.45) : PICK, way:[new V3(86.4, FY, 5.3 + i*.65), new V3(90.3, FY, 5.3 + i*.65)]};
+    return {R, held, home, path:[], state:'idle', walk:rnd(0, 6), wait:i*1.5, drop:DROPS[i], pick:i ? new V3(86.9, FY, 3.45) : PICK, way:[] /* sem mesa no meio: vai direto ao caminhão */};
   });
   const carsIdle = () => CARS.every(c => c.state === 'idle');
+  SALE.PILE_P = PILE; SALE.DROP_P = DROP;
   // quem é da equipe do galpão entra na conta para ninguém atravessar ninguém
   SALE.crowd = [{p:desp.g.position, fixed:true}, {p:pack.g.position, fixed:true}].concat(CARS.map(c => ({p:c.R.g.position})));
+  // a equipe do comprador e o caminhão só vêm no dia de corte
+  SALE.present = on => { SALE.here = on; for (const R of [desp, pack, ...CARS.map(c => c.R)]) R.g.visible = on; truck.visible = on; SALE.crowd.forEach(c => { c.off = !on; }); SALE.bedOn = on; };
   let despT = 0, despCur = null, packT = 0, despIdle = 0, packIdle = 0;
   // banquinhos de madeira e uma coluna para a equipe descansar quando não tem serviço
   const crateSeat = (x, z, ci) => { const g = new THREE.Group(); for (let k=0;k<2;k++){ const b = new THREE.Mesh(K.geo, K.mats[(ci + k*2)%4]); b.position.y = k*.29; b.rotation.y = rnd(-.08, .08) + (k ? .1 : 0); g.add(b); }
@@ -5993,10 +6043,10 @@ function floorAt(x, z){
     for (const h of helpers){ if (h.carry){ SALE.pile.push(h.carry); h.carry = null; showHelperCarry(h); } releaseHelper(h); }
     const total = mainT.cargo.length + SALE.pile.length + player.carry.length;
     if (!total) return false;
-    SALE.on = true; SALE.refreshPile();
+    SALE.on = true; SALE.pAct = now; SALE.refreshPile();
     // estaciona rente ao galpão, com a carreta na frente do tanque
     withTractor(mainT, () => { tractor.route = routeTo(DEPOT, false); tractor.route.push({x:81.5, z:8.7}, {x:86, z:8.7}); tractor.state = 'saleGo'; tractor.wantT = 0; });
-    toast('Hora de vender! O trator leva a carreta até o galpão (fim da estrada, à direita). Quando ela parar lá, ponha os cachos no tanque d’água.');
+    toast('Hora de vender! O trator leva a carreta até o galpão e o tratorista descarrega os cachos na área de descarga. Leve os cachos de lá até o tanque d’água.');
     sfx(523, 784, .3, 'triangle', .08);
     return true;
   };
@@ -6018,11 +6068,12 @@ function floorAt(x, z){
     if (n && Math.hypot(p.x - DROP.x, p.z - DROP.z) < 1.7) return {type:'tank'};
     if (n < carryCap()){
       const T = nearCartT(); if (T && T.cargo.length) return cartParked(T) ? {type:'take', T} : {type:'cartWait'};
-      if (SALE.pile.length && Math.hypot(p.x - PILE.x, p.z - PILE.z) < 1.9) return {type:'takePile'};
+      if (SALE.pile.length && Math.hypot(p.x - PILE.x, p.z - PILE.z) < 3.0) return {type:'takePile'};
     }
     return null;
   };
   SALE.act = a => {
+    SALE.pAct = now;
     if (a.type === 'cartWait'){ float('Espere a carreta chegar ao galpão', headPos(), '#ffb199'); return; }
     if (a.type === 'take'){ const c = a.T.cargo.pop(); a.T.load = Math.max(0, a.T.load - (c.kg || 0)); player.carry.push(c); sfx(300, 420, .08, 'triangle', .06); }
     else if (a.type === 'takePile'){ player.carry.push(SALE.pile.pop()); SALE.refreshPile(); sfx(300, 420, .08, 'triangle', .06); }
@@ -6033,12 +6084,17 @@ function floorAt(x, z){
     : a.type === 'take' ? k + ': pegar cacho da carreta (' + a.T.cargo.length + ' na carreta)' : k + ': pegar cacho da pilha (' + SALE.pile.length + ')';
   SALE.left = () => mainT.cargo.length + SALE.pile.length + player.carry.length;
 
+  let unloadT = 0;
   SALE.update = dt => {
+    // trator parado no galpão: o tratorista descarrega a carreta, cacho por cacho, na área de descarga
+    if (SALE.on && mainT.state === 'sale' && mainT.cargo.length){ unloadT -= dt; if (unloadT <= 0){ unloadT = .55; const c = mainT.cargo.pop(); mainT.load = Math.max(0, mainT.load - (c.kg || 0)); SALE.pile.push(c); SALE.refreshPile(); sfx(140, 90, .09, 'triangle', .05); } }
     syncQueue(); floatQueue();
+    // com muito cacho esperando a equipe trabalha mais rápido (até 2,2x); no começo vai no ritmo normal
+    const work = SALE.queue.length + SALE.pile.length + mainT.cargo.length + SALE.pencas.length/3 + SALE.ready, rush = Math.min(2.2, 1 + Math.max(0, work - 2)/6), dw = dt*rush; SALE.rush = rush;
     // despencador: o cacho fica em pé na água e ele corta penca por penca
     if (!despCur && SALE.queue.length){ despIdle = 0; if (npcGo(desp, CUT.x, 2.75, dt)){ desp.g.rotation.y = Math.PI; despCur = SALE.queue.shift(); despCur.cut = 0; showTankBunch(despCur); despCur.n = tankHands.length || 5; despT = despCur.t0 = despCur.n*.6 + .7; } }
     if (despCur){
-      despT -= dt; walkPose(desp, 0, {crouch:.22}); if (desp.piv) desp.piv.rotation.x = .7 + Math.sin(now*7)*.5;
+      despT -= dw; walkPose(desp, 0, {crouch:.22}); if (desp.piv) desp.piv.rotation.x = .7 + Math.sin(now*7)*.5;
       const n = despCur.n, due = Math.floor((despCur.t0 - despT)/.6);
       while (despCur.cut < Math.min(n, due)){
         const h = tankHands[despCur.cut]; despCur.cut++;
@@ -6055,17 +6111,17 @@ function floorAt(x, z){
     } else if (!SALE.queue.length){ despIdle += dt; if (despIdle > 3) npcRest(desp, SPOTS.desp, dt); else walkPose(desp, 0, {}); }
     // embalador: tira a penca da água e arruma na caixa plástica (2 pencas por caixa)
     // pencas boiando vão para o lado do embalador
-    for (const m of SALE.pencas){ const u = m.userData; m.position.x += (u.tx - m.position.x)*Math.min(1, dt*.6); u.ph += dt; m.position.y = FY + .7 + Math.sin(u.ph*1.7)*.008; m.rotation.y += dt*.1; }
+    for (const m of SALE.pencas){ const u = m.userData; m.position.x += (u.tx - m.position.x)*Math.min(1, dw*.6); u.ph += dt; m.position.y = FY + .7 + Math.sin(u.ph*1.7)*.008; m.rotation.y += dt*.1; }
     // embalador: fica parado na ponta do tanque; pega a penca da água e vira só um pouco para pôr na caixa do cavalete
     const pIdx = SALE.pencas.findIndex(m => m.position.x > TANK.x + .3);
-    if (packT > 0){ packT -= dt; pHeld.visible = packT < .75 && packT > .1; pack.g.rotation.y = angLerp(pack.g.rotation.y, packT > .75 ? PACK_TANK : PACK_CRATE, Math.min(1, dt*5)); walkPose(pack, 0, {crouch:packT > .75 ? .35 : .15});
+    if (packT > 0){ packT -= dw; pHeld.visible = packT < .75 && packT > .1; pack.g.rotation.y = angLerp(pack.g.rotation.y, packT > .75 ? PACK_TANK : PACK_CRATE, Math.min(1, dt*5)); walkPose(pack, 0, {crouch:packT > .75 ? .35 : .15});
       if (packT <= 0){ packT = 0; pHeld.visible = false; tablePencas[SALE.fill].visible = true; SALE.fill++; if (SALE.fill >= 4){ SALE.fill = 0; SALE.ready++; tablePencas.forEach(m => { m.visible = false; }); standCi++; standCrate.material = K.mats[standCi%4]; } } }
     else if (pIdx >= 0 && SALE.ready < 4){ packIdle = 0; if (npcGo(pack, PACK.x, PACK.z, dt)){ pack.g.rotation.y = PACK_TANK; scene.remove(SALE.pencas.splice(pIdx, 1)[0]); packT = 1.15; } }
     else { packIdle += dt; if (packIdle > 3 && !SALE.pencas.length) npcRest(pack, SPOTS.pack, dt); else { walkPose(pack, 0, {}); pack.g.rotation.y = angLerp(pack.g.rotation.y, PACK_TANK, Math.min(1, dt*3)); } }
     readyCrates.forEach((b, i) => { b.visible = i < SALE.ready; });
     // carregadores: cada um pega uma caixa pronta e leva até o caminhão (um não pega a mesma caixa que o outro)
     for (const c of CARS){
-      const R = c.R, cg = R.g.position, go = (to, sp) => { const dx = to.x - cg.x, dz = to.z - cg.z, d = Math.hypot(dx, dz); if (d < (to === c.path[0] && c.path.length > 1 ? .3 : .08)) return true; const st = Math.min(d, sp*dt); cg.x += dx/d*st; cg.z += dz/d*st; cg.y = floorAt(cg.x, cg.z); R.g.rotation.y = angLerp(R.g.rotation.y, Math.atan2(dx, dz), Math.min(1, dt*8)); c.walk += dt*8; walkPose(R, Math.sin(c.walk), {moving:true, walk:c.walk}); return false; };
+      const R = c.R, cg = R.g.position, go = (to, sp) => { const dx = to.x - cg.x, dz = to.z - cg.z, d = Math.hypot(dx, dz); if (d < (to === c.path[0] && c.path.length > 1 ? .3 : .2)) return true; const st = Math.min(d, sp*dw); cg.x += dx/d*st; cg.z += dz/d*st; cg.y = floorAt(cg.x, cg.z); R.g.rotation.y = angLerp(R.g.rotation.y, Math.atan2(dx, dz), Math.min(1, dt*8)); c.walk += dt*8; walkPose(R, Math.sin(c.walk), {moving:true, walk:c.walk}); return false; };
       if (c.state === 'idle'){ c.idleT = (c.idleT || 0) + dt; if (c.idleT > 3) npcRest(R, SPOTS.cars[CARS.indexOf(c)], dt); else { walkPose(R, 0, {}); R.g.rotation.y = angLerp(R.g.rotation.y, -Math.PI/2, Math.min(1, dt*4)); } c.wait -= dt; if (c.wait <= 0 && SALE.ready - CARS.filter(o => o.state === 'toPick').length > 0){ c.state = 'toPick'; c.idleT = 0; } }
       else if (c.state === 'toPick'){ if (go(c.pick, 1.9)){ if (SALE.ready > 0){ SALE.ready--; c.held.visible = true; sfx(160, 120, .06, 'square', .02); c.state = 'toTruck'; c.path = c.way.concat([c.drop]); } else { c.state = 'back'; c.path = [c.home]; } } }
       else if (c.state === 'toTruck'){ if (go(c.path[0], 2.1)){ c.path.shift(); if (!c.path.length){ c.held.visible = false; truckCrate(SALE.onTruck++); sfx(180, 140, .08, 'square', .03); c.state = 'back'; c.path = c.way.slice().reverse().concat([c.home]); } } }
