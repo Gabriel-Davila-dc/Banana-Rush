@@ -1851,20 +1851,56 @@ function routeTo(target, isCart){
   } else pts.push({x:target.x, z:target.z});
   return pts;
 }
+function tractorPts(T){
+  const ax = tractorAxisX(T.yaw), az = tractorAxisZ(T.yaw), B = T.cartBack, HW = T.cartHalfW, out = [];
+  for (const lx of [-B, -B*.66, -B*.33, 0, 1.05, 2.1]) for (const lz of [-HW, 0, HW]) out.push({x:T.x + ax.x*lx + az.x*lz, z:T.z + ax.z*lx + az.z*lz});
+  return out;
+}
+const isDriving = T => !!(T.route && T.route.length) && !(T.waitT > 0);
+// desvio: encosta de lado, longe do caminho do outro trator, e depois segue o que ia fazer
+function sideStep(Y, O){
+  const az = tractorAxisZ(O.yaw), hy = tractorAxisX(Y.yaw); let side = Math.sign((Y.x - O.x)*az.x + (Y.z - O.z)*az.z) || 1;
+  const dist = O.cartHalfW + Y.cartHalfW + 2.4;
+  return {x:Y.x + az.x*side*dist + hy.x*2.5, z:Y.z + az.z*side*dist + hy.z*2.5};
+}
 function driveRoute(dt, spd){
   let moved = 0;
   while (tractor.route.length && dt > 0){
     const w = tractor.route[0], dx = w.x - tractor.x, dz = w.z - tractor.z, d = Math.hypot(dx, dz);
-    if (d < .05){ tractor.route.shift(); continue; }
+    const last = tractor.route.length === 1;
+    if (d < (last ? .2 : .75)){ if (last){ tractor.x = w.x; tractor.z = w.z; } tractor.route.shift(); continue; }
     const target = Math.atan2(-dz, dx);
     { const ax = tractorAxisX(tractor.yaw), az = tractorAxisZ(tractor.yaw), HW = tractor.cartHalfW + .45;
       const inFront = p => { const qx = p.x - tractor.x, qz = p.z - tractor.z, lx = qx*ax.x + qz*ax.z, lz = qx*az.x + qz*az.z; return lx > 1.4 && lx < 4.6 && Math.abs(lz) < HW; };
       const pl = inFront(player.pos), other = !pl && (tractor.waitT || 0) < 3 && [...workers, ...helpers].some(o => inFront(o.pos));
       if (pl || other){ tractor.waitT = (tractor.waitT || 0) + dt; if (pl && tractor.waitT > .8 && !tractor.honked){ tractor.honked = true; if (Math.hypot(player.pos.x - tractor.x, player.pos.z - tractor.z) < 30) honk(); } if (pl && tractor.waitT > 5 && (tractor.state === 'moving' || tractor.state === 'returning')) tractor.route.length = 0; return 0; }
-      tractor.waitT = 0; tractor.honked = false; }
-    tractor.yaw = angLerp(tractor.yaw, target, Math.min(1, dt*5));
-    const step = Math.min(d, spd*dt);
-    tractor.x += dx/d*step; tractor.z += dz/d*step; moved += step;
+      tractor.waitT = 0; tractor.honked = false;
+      const me = tractor, isMain = me === mainT;
+      for (const O of allTractors()){
+        if (O === me || !O.grp || !O.grp.visible) continue;
+        const fx = dx/d, fz = dz/d, inPath = p => { const qx = p.x - me.x, qz = p.z - me.z, lx = qx*fx + qz*fz, lat = Math.abs(qx*fz - qz*fx); return lx > 1.2 && lx < Math.min(6.5, d + 3) && lat < me.cartHalfW + .7; }; // olha para onde vai andar, não para onde o nariz aponta
+        if (!tractorPts(O).some(inPath)) continue;
+        const moving = isDriving(O);
+        me.blockT = (me.blockT || 0) + dt;
+        if (isMain && !moving && me.blockT > 1.2 && !(O.sideT > now)){
+          // o outro está parado ou esperando na frente: ele encosta de lado para o principal passar
+          const P = sideStep(O, me); O.sideT = now + 6; O.waitT = 0;
+          if (O.state === 'here'){ O.route = [P]; O.state = 'moving'; O.home.set(P.x - tractorAxisX(O.yaw).x*O.cartOff, 0, P.z - tractorAxisX(O.yaw).z*O.cartOff); } else O.route.unshift(P);
+        }
+        if (!isMain && me.blockT > 1.5 && !(me.sideT > now)){ me.sideT = now + 6; me.route.unshift(sideStep(me, O)); me.waitT = 0; me.blockT = 0; return 0; } // o 2º trator desvia sozinho
+        if (isMain && me.blockT > 9) continue; // não tem jeito: segue (evita travar para sempre)
+        me.waitT = (me.waitT || 0) + dt;
+        return 0;
+      }
+      me.blockT = 0; }
+    // manobra de trator de verdade: anda para onde o nariz aponta, vira aos poucos e diminui na curva
+    { let err = target - tractor.yaw; err = Math.atan2(Math.sin(err), Math.cos(err));
+      const turnRate = 1.7, tr = Math.max(-turnRate*dt, Math.min(turnRate*dt, err)); tractor.yaw += tr;
+      const al = Math.cos(Math.min(Math.abs(err), Math.PI/2));
+      let v = spd*Math.max(.16, al*al); if (last) v = Math.min(v, Math.max(.7, d*1.4));
+      const step = Math.min(d, v*dt), hx = Math.cos(tractor.yaw), hz = -Math.sin(tractor.yaw), k = d < 1.6 ? .55 : .08;
+      let mx = hx*(1 - k) + dx/d*k, mz = hz*(1 - k) + dz/d*k; const ml = Math.hypot(mx, mz) || 1;
+      tractor.x += mx/ml*step; tractor.z += mz/ml*step; moved += step; }
     break;
   }
   return moved;
@@ -3657,7 +3693,7 @@ function updateTractor(dt, follow, isMain){
       if (tractor.wantT > (save.lv.trator >= 2 ? .5 : 1.4)){ tractor.home.set(tgt.x, 0, tgt.z); tractor.route = routeTo(tgt, true); tractor.state = 'moving'; tractor.wantT = 0; if (isMain) float('O trator vai até você', headPos(), '#fff6c8'); else float('2º trator vai até o Toninho', new V3(tractor.x, 3, tractor.z), '#fff6c8'); }
     } else tractor.wantT = 0;
   }
-  else if (tractor.state === 'saleGo'){ tdx = driveRoute(dt, tspd); if (!tractor.route.length){ tractor.state = 'sale'; tractor.parkYaw = tractor.yaw; tractor.home.copy(cartPos()); } }
+  else if (tractor.state === 'saleGo'){ tdx = driveRoute(dt, tspd); if (!tractor.route.length){ tractor.state = 'sale'; tractor.yaw = 0; tractor.parkYaw = 0; /* estaciona reto, paralelo ao galpão */ tractor.home.copy(cartPos()); } }
   else if (tractor.state === 'full'){ tractor.timer -= dt; if (tractor.timer <= 0){ tractor.state = 'leaving'; tractor.route = routeTo(DEPOT, false); } }
   else if (tractor.state === 'leaving'){ tdx = driveRoute(dt, tspd); if (!tractor.route.length){ tractor.state = 'away'; tractor.timer = save.lv.trator >= 2 ? 1 : 3; } }
   else if (tractor.state === 'away'){ tractor.timer -= dt; if (tractor.timer <= 0){ SALE.pile.push(...tractor.cargo); SALE.refreshPile(); tractor.load = 0; tractor.cargo = []; tractor.trips++; const tgt = cartTargetFor(follow); tractor.home.set(tgt.x, 0, tgt.z); tractor.route = routeTo(tgt, true); tractor.state = 'returning'; } }
@@ -4089,7 +4125,7 @@ function updateHelpers(dt){
         if (h.idleT <= 0){
           // o cortador só carrega se não houver carregador, ou se já tiver mais de 6 cachos no chão
           const pilha = ground_bunches.length > 6;
-          let bb = null, bs = 1e9, bd = h.d.cut ? (pilha ? 120 : (helpers.some(x => !x.d.cut) && !tractor2) ? 0 : 8) : 120;
+          let bb = null, bs = 1e9, bd = SALE.on ? 0 : h.d.cut ? (pilha ? 120 : (helpers.some(x => !x.d.cut) && !tractor2) ? 0 : 8) : 120;
           for (const b of ground_bunches){
             if (b.claimedBy || b.swarm || b.avoidT > now || Math.hypot(b.x - player.pos.x, b.z - player.pos.z) < 2.5) continue;
             const d = Math.hypot(b.x - h.pos.x, b.z - h.pos.z); if (d > bd) continue;
@@ -4098,7 +4134,7 @@ function updateHelpers(dt){
           }
           if (bb){ h.bunch = bb; bb.claimedBy = h; helperGoTo(h, bb.x, bb.z, .5); h.state = 'toBunch'; }
           else if (!h.d.cut) h.idleT = .8;
-          else if (game.mis) h.idleT = 1.5; // cortador só corta no dia de corte
+          else if (game.mis || SALE.on) h.idleT = 1.5; // cortador só corta no dia de corte e para quando começa a venda
           else {
             let best = null, bs = 1e9;
             for (const t of trees){
@@ -5776,6 +5812,7 @@ function floorAt(x, z){
     for (const [wx, wz] of [[3, 1.02], [3, -1.02], [-1.7, 1.02], [-1.7, -1.02], [-2.65, 1.02], [-2.65, -1.02]]){ const w = add(new THREE.CylinderGeometry(.5, .5, .32, 20), dark, wx, .5, wz); w.rotation.x = Math.PI/2; const h = add(new THREE.CylinderGeometry(.24, .24, .34, 10), chrome, wx, .5, wz); h.rotation.x = Math.PI/2; }
   }
   solid(TRUCK.x - 1.25, TRUCK.x + 1.25, TRUCK.z - 2.9, TRUCK.z + 4.9);
+  const TRUCK_OUT = [{x:TRUCK.x, z:7.6}, {x:TRUCK.x - 1.4, z:10.3}, {x:TRUCK.x - 4, z:11.3}, {x:40, z:11.3}]; // saída: frente até a estrada, vira para o oeste
   // caixas cheias na carroceria: uma malha para as caixas e uma para as pencas (leve)
   const CAP = 7*5*5, crateIM = new THREE.InstancedMesh(K.geo, K.white, CAP), pencaIM = new THREE.InstancedMesh(pencaGeo, pencaM, CAP*2);
   for (let i=0;i<CAP;i++) crateIM.setColorAt(i, new THREE.Color(K.cols[i%4]));
@@ -5859,6 +5896,7 @@ function floorAt(x, z){
   SALE.start = () => {
     if (game.mis) return false;
     for (const T of allTractors()) if (T !== mainT && T.cargo.length){ SALE.pile.push(...T.cargo); T.cargo = []; T.load = 0; }
+    for (const h of helpers){ if (h.carry){ SALE.pile.push(h.carry); h.carry = null; showHelperCarry(h); } releaseHelper(h); }
     const total = mainT.cargo.length + SALE.pile.length + player.carry.length;
     if (!total) return false;
     SALE.on = true; SALE.refreshPile();
@@ -5872,7 +5910,7 @@ function floorAt(x, z){
     SALE.on = false; SALE.queue = []; syncQueue(); SALE.pile = []; SALE.fill = 0; SALE.ready = 0; SALE.leaving = 0; SALE.onTruck = 0;
     for (const m of SALE.pencas) scene.remove(m); SALE.pencas = [];
     crateIM.count = 0; pencaIM.count = 0;
-    truck.position.set(TRUCK.x, heightAt(TRUCK.x, TRUCK.z), TRUCK.z); truck.visible = true; SALE.bedOn = true;
+    truck.position.set(TRUCK.x, heightAt(TRUCK.x, TRUCK.z), TRUCK.z); truck.rotation.y = -Math.PI/2; truck.visible = true; SALE.bedOn = true;
     showTankBunch(null); despCur = null; despT = 0; packT = 0; pHeld.visible = false; pack.g.rotation.y = PACK_TANK;
     for (const c of CARS){ c.state = 'idle'; c.path = []; c.held.visible = false; c.R.g.position.copy(c.home); c.R.g.rotation.y = -Math.PI/2; }
     tablePencas.forEach(m => { m.visible = false; }); readyCrates.forEach(b => { b.visible = false; });
@@ -5948,9 +5986,13 @@ function floorAt(x, z){
       // tudo vendido: fecha a última caixa, o caminhão sai e o dia acaba
       if (!left && !busy && !SALE.pencas.length && !(packT > 0) && !SALE.ready && carsIdle()){
         if (SALE.fill){ SALE.fill = 0; SALE.ready++; tablePencas.forEach(m => { m.visible = false; }); }
-        else if (!SALE.leaving){ SALE.leaving = 5; SALE.bedOn = false; toast('Caminhão carregado com ' + SALE.onTruck + (SALE.onTruck === 1 ? ' caixa' : ' caixas') + '. Venda feita!'); sfx(220, 180, .5, 'sawtooth', .05); }
+        else if (!SALE.leaving){ SALE.leaving = 9; truck.userData.sp = 0; truck.userData.wp = 0; SALE.bedOn = false; toast('Caminhão carregado com ' + SALE.onTruck + (SALE.onTruck === 1 ? ' caixa' : ' caixas') + '. Venda feita!'); sfx(220, 180, .5, 'sawtooth', .05); }
       }
-      if (SALE.leaving){ SALE.leaving -= dt; truck.position.z += dt*Math.max(0, 5 - SALE.leaving)*1.6; if (SALE.leaving <= 0){ SALE.leaving = 0; SALE.on = false; b.hidden = true; truck.visible = false; endDay(); } }
+      if (SALE.leaving){ SALE.leaving -= dt;
+        const tu = truck.userData, W = TRUCK_OUT[tu.wp]; tu.sp = Math.min(tu.sp + dt*(tu.wp ? 1.6 : .9), tu.wp > 2 ? 7 : 2.2);
+        if (W){ const dx = W.x - truck.position.x, dz = W.z - truck.position.z; if (Math.hypot(dx, dz) < 1.4) tu.wp++; else truck.rotation.y = angLerp(truck.rotation.y, Math.atan2(-dz, dx), Math.min(1, dt*2.6)); }
+        truck.position.x += Math.cos(truck.rotation.y)*tu.sp*dt; truck.position.z -= Math.sin(truck.rotation.y)*tu.sp*dt; truck.position.y = heightAt(truck.position.x, truck.position.z);
+        if (SALE.leaving <= 0){ SALE.leaving = 0; SALE.on = false; b.hidden = true; truck.visible = false; endDay(); } }
     }
   };
 })();
