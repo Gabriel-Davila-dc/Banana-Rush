@@ -3695,8 +3695,12 @@ function hireWorker(type, idx){
   w.lbl = makeLabel('worker');
   scene.add(body.g); workers.push(w);
 }
+const ladX = t => t.state === 'regrow' ? Math.max(0, t.lad - 1) : t.lad;
+// o peão do manejo segue a tarefa do dia: dia de desbrota só desbrota, dia de desfolha só desfolha
+function manejoFoco(){ const m = game.mis && !game.mis.done && game.mis.m.task; return m === 'desbrotar' || m === 'desfolhar' ? m : null; }
+const manejoLad = t => manejoFoco() !== 'desfolhar' && ladX(t) > 0, manejoFolha = t => manejoFoco() !== 'desbrotar' && (t.sig || t.dry);
 function misNeeds(task, t){
-  if (task === 'desbrotar') return t.state !== 'falling' && t.lad > 0;
+  if (task === 'desbrotar') return t.state !== 'falling' && ladX(t) > 0;
   if (task === 'desfolhar') return t.state !== 'falling' && (t.sig || t.dry);
   return taskNeeded(task, t);
 }
@@ -3742,7 +3746,7 @@ function setupMission(){
   game.mis = null; game.autoEnd = 0;
   if (!m.task) return;
   const goal = Math.min(8 + 2*cycleN(), 16), want = goal;
-  const count = () => trees.reduce((n, t) => n + (misNeeds(m.task, t) ? (m.task === 'desbrotar' ? t.lad : 1) : 0), 0);
+  const count = () => trees.reduce((n, t) => n + (misNeeds(m.task, t) ? (m.task === 'desbrotar' ? ladX(t) : 1) : 0), 0);
   let have = count();
   const pool = trees.filter(t => t.state === 'grown').sort(() => Math.random() - .5).sort((a, b) => (a.wash || a.bag ? 1 : 0) - (b.wash || b.bag ? 1 : 0));
   for (const t of pool){
@@ -3784,11 +3788,11 @@ function checkHarvestDone(dt){
 function checkMission(dt){
   checkHarvestDone(dt);
   const ms = game.mis;
-  if (ms && !ms.done){ ms.chk = (ms.chk || 0) + dt; if (ms.chk > .5){ ms.chk = 0; const left = trees.reduce((n, t) => n + (misNeeds(ms.m.task, t) ? (ms.m.task === 'desbrotar' ? t.lad : 1) : 0), 0); ms.goal = Math.max(ms.goal, ms.got + left); if (!left) finishMission(); } }
+  if (ms && !ms.done){ ms.chk = (ms.chk || 0) + dt; if (ms.chk > .5){ ms.chk = 0; const left = trees.reduce((n, t) => n + (misNeeds(ms.m.task, t) ? (ms.m.task === 'desbrotar' ? ladX(t) : 1) : 0), 0); ms.goal = Math.max(ms.goal, ms.got + left); if (!left) finishMission(); } }
   if (game.autoEnd){ game.autoEnd -= dt; if (game.autoEnd <= 0){ game.autoEnd = 0; if (game.running && !SALE.on && !SALE.start()) endDay(); } }
 }
 function taskNeeded(task, t){
-  if (task === 'manejo') return t.state !== 'falling' && (t.lad > 0 || t.sig || t.dry);
+  if (task === 'manejo') return t.state !== 'falling' && (manejoLad(t) || manejoFolha(t));
   if (t.state !== 'grown') return false;
   if (task === 'escorar') return !t.esc;
   if (task === 'desumbigar') return !t.desu;
@@ -3898,7 +3902,7 @@ function updateWorkers(dt){
           const near = Math.hypot(t.x - player.pos.x, t.z - player.pos.z) < 14;
           const misT = game.mis && !game.mis.done && game.mis.m.task, conta = !!misT && misNeeds(misT, t);
           if (w.d.task === 'desumbigar'){ desumbigar(t); if (near) float('Desembigado! O umbigo caiu', new V3(t.x, 2.8, t.z), '#d58ae0'); }
-          else if (w.d.task === 'manejo'){ const was = t.lad; t.lad = 0; if (t.sig || t.dry){ if (near) desfolhar(t); else { t.sig = false; t.dry = false; if (t.state === 'grown') t.maxHp = treeHp(t), t.hp = Math.min(t.hp, t.maxHp); refreshTreeLook(t); } } refreshTreeLook(t); if (near) float(was ? 'Desbastado' : 'Desfolhado', new V3(t.x, 2.4, t.z), '#c9e88a'); }
+          else if (w.d.task === 'manejo'){ const was = manejoLad(t), folha = manejoFolha(t); if (was) t.lad -= ladX(t); if (folha){ if (near) desfolhar(t); else { t.sig = false; t.dry = false; if (t.state === 'grown') t.maxHp = treeHp(t), t.hp = Math.min(t.hp, t.maxHp); refreshTreeLook(t); } } refreshTreeLook(t); if (near) float(was ? 'Desbastado' : 'Desfolhado', new V3(t.x, 2.4, t.z), '#c9e88a'); }
           else if (w.d.task === 'escorar'){ t.esc = true; refreshTreeLook(t); if (near) float('Escorada com bambu', new V3(t.x, 2.8, t.z), '#e7dc8a'); }
           else if (w.d.task === 'banhar'){ t.wash = true; refreshBunch(t); if (near) float('Banhado +20%', new V3(t.x, 2.8, t.z), '#bfe6ff'); }
           else { t.bag = true; refreshBunch(t); if (near) float('Ensacado +30%', new V3(t.x, 2.8, t.z), '#8fb4ff'); }
@@ -3911,7 +3915,7 @@ function updateWorkers(dt){
     b.g.rotation.z = w.stunT > 0 ? Math.sin(now*12)*.18 : 0;
     const st = moving ? Math.sin(w.walk) : 0;
     // desbaste (tirar o ladrão) é com a lurdinha, agachado; desfolha é com a foice, lá no alto
-    const tk = w.d.task, desb = tk === 'manejo' && w.target && w.target.lad > 0;
+    const tk = w.d.task, desb = tk === 'manejo' && w.target && manejoLad(w.target);
     if (tk === 'manejo' && b.setTool){ const nm = desb ? 'lurdinha' : 'foice'; if (b.tool !== nm) b.setTool(nm); }
     const low = working && desb;
     walkPose(b, st, {moving, walk:w.walk, stun:w.stunT > 0, crouch:low ? .45 : 0});
@@ -4179,7 +4183,7 @@ function nearestTree(){
 function nearestManejo(){
   let best = null, bd = 1.9;
   for (const t of trees){
-    if (t.state === 'falling' || !(t.lad > 0 || t.sig)) continue;
+    if (t.state === 'falling' || !(ladX(t) > 0 || t.sig)) continue;
     const d = Math.hypot(t.x - player.pos.x, t.z - player.pos.z); if (d < bd){ bd = d; best = t; }
   }
   return best;
@@ -4235,7 +4239,7 @@ function actionDown(){
     float('Abelhas! Corra e espere elas irem embora', headPos(), '#ffd23f');
   } else if (a.type === 'manejo'){
     const t = a.t; player.crouchT = .4; startSwing(null); snd.chop('weak');
-    if (t.lad > 0){ t.lad--; float('Desbaste: ladrão arrancado', new V3(t.x, 1.6, t.z), '#c9e88a'); burstFlakes(new V3(t.x, .4, t.z), 6); }
+    if (ladX(t) > 0){ t.lad--; float('Desbaste: ladrão arrancado', new V3(t.x, 1.6, t.z), '#c9e88a'); burstFlakes(new V3(t.x, .4, t.z), 6); }
     else { desfolhar(t); float('Desfolha: folha seca cortada', new V3(t.x, 2.6, t.z), '#e8d38a'); }
     refreshTreeLook(t); gainXp(5, new V3(t.x, 2.2, t.z));
   } else if (a.type === 'mis'){
@@ -4706,9 +4710,9 @@ function updateUI(dt){
     else if (a.type === 'wait'){ hint = 'Trator descarregando…'; btn = 'Esperar'; }
     else if (a.type === 'pick' && a.b.swarm && a.b.swarm.state === 'ground'){ hint = 'Abelhas no cacho! Espere ' + Math.ceil(a.b.swarm.time) + ' s'; btn = 'Pegar'; }
     else if (a.type === 'pick'){ hint = k + ': pegar · ' + Q[a.b.q].curto + ' · ' + a.b.kg + ' kg'; btn = 'Pegar'; }
-    else if (a.type === 'manejo'){ hint = k + ': ' + (a.t.lad ? 'desbaste (' + a.t.lad + (a.t.lad > 1 ? ' ladrões' : ' ladrão') + ')' : 'desfolha (folha seca)'); btn = 'Manejo'; }
+    else if (a.type === 'manejo'){ hint = k + ': ' + (ladX(a.t) ? 'desbaste (' + ladX(a.t) + (ladX(a.t) > 1 ? ' ladrões' : ' ladrão') + ')' : 'desfolha (folha seca)'); btn = 'Manejo'; }
     else if (a.type === 'aim'){ hint = fp ? 'Mire no cacho (bolinha no meio da tela) para ' + game.mis.m.fazer : 'Vire de frente para o cacho para ' + game.mis.m.fazer; btn = 'Mirar'; }
-    else if (a.type === 'mis'){ hint = k + ': ' + game.mis.m.fazer + (game.mis.m.task === 'desbrotar' ? ' (' + a.t.lad + (a.t.lad > 1 ? ' ladrões)' : ' ladrão)') : ''); btn = game.mis.m.btn; }
+    else if (a.type === 'mis'){ hint = k + ': ' + game.mis.m.fazer + (game.mis.m.task === 'desbrotar' ? ' (' + ladX(a.t) + (ladX(a.t) > 1 ? ' ladrões)' : ' ladrão)') : ''); btn = game.mis.m.btn; }
     else if (a.type === 'notoday'){ hint = 'Hoje é ' + game.mis.m.nome.toLowerCase() + ', não de corte'; btn = game.mis.m.btn; }
     else if (a.type === 'umbigo'){ { const dd = Math.max(1, Math.round(a.t.matureT/dayLength())); hint = 'Com umbigo · pronto em ~' + dd + (dd > 1 ? ' dias' : ' dia'); } btn = 'Foice'; }
     else if (a.type === 'bees'){ hint = 'Abelhas no cacho! Corra e espere'; btn = 'Foice'; }
