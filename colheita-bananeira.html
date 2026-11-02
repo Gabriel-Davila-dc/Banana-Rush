@@ -1535,7 +1535,8 @@ function plantTree(x, z){
     const st = new THREE.Mesh(suckerStemGeo, M.trunk), lf = new THREE.Mesh(suckerLeafGeo, M.sucker); st.castShadow = lf.castShadow = true;
     sg.add(st, lf); sg.visible = false; t.sk.add(sg); t.skMeshes.push(sg);
   }
-  t.dryMesh = mesh.dry; t.dry = Math.random() < .65; t.far = [mesh.bd, mesh.kid].filter(Boolean);
+  t.dryMesh = mesh.dry; t.dry = Math.random() < .65; t.far = [mesh.bd];
+  if (mesh.kid){ mesh.body.remove(mesh.kid); t.kidG = new THREE.Group(); t.kidG.position.set(x, t.baseY, z); t.kidG.rotation.copy(mesh.body.rotation); t.kidG.scale.copy(mesh.body.scale); t.kidG.add(mesh.kid); mesh.kid.traverse(o => { if (o.isMesh){ o.castShadow = true; o.receiveShadow = true; } }); scene.add(t.kidG); t.kidShow = true; }
   t.prop = new THREE.Mesh(propGeo, M.bamboo); t.prop.castShadow = true; t.prop.visible = false; t.body.add(t.prop);
   t.lbl = makeLabel('tq');
   resetTree(t, .5); trees.push(t);
@@ -1628,7 +1629,7 @@ function resetTree(t, umbigoChance){
   refreshTreeLook(t);
 }
 function startRegrow(t, grow){
-  t.state = 'regrow'; t.grow = grow; t.grp.quaternion.identity(); t.grp.position.y = t.baseY;
+  t.state = 'regrow'; t.grow = grow; t.grp.quaternion.identity(); t.grp.position.y = t.baseY; t.grp.visible = grow >= .3; t.kidShow = grow < .3; if (t.kidG) t.kidG.visible = t.kidShow;
   t.grp.scale.setScalar(.15 + .85*grow); t.stump.visible = true; t.esc = false;
   t.mae.visible = grow < .45; t.halves.visible = grow >= .45;
   if (t.bunch){ t.body.remove(t.bunch); t.bunch = null; }
@@ -2546,7 +2547,7 @@ function chunkInstances(im, cell, maxDist){
 }
 function updateCull(){
   const cp0 = camera.position;
-  for (const t of trees){ const c = t.crown, hi = c && c.userData.hi; if (!hi) continue; const far = (t.x - cp0.x)**2 + (t.z - cp0.z)**2 > 30*30; c.geometry = far ? hi.userData.low : hi; if (t.far) for (const o of t.far) o.visible = !far; }
+  for (const t of trees){ const c = t.crown, hi = c && c.userData.hi; if (!hi) continue; const far = (t.x - cp0.x)**2 + (t.z - cp0.z)**2 > 30*30; c.geometry = far ? hi.userData.low : hi; if (t.far) for (const o of t.far) o.visible = !far; if (t.kidG) t.kidG.visible = !far && t.kidShow !== false; }
   const Lc = chunkInstances.list; if (!Lc) return; const cp = camera.position; for (const ch of Lc) if (ch.userData.cullD) ch.visible = ch.userData.cullC.distanceTo(cp) < ch.userData.cullD; }
 // pedra leve: icosaedro deformado no tamanho da pedra original
 function lowRock(src){
@@ -4396,7 +4397,8 @@ function update(dt){
       t.grow += live*lk/REGROW;
       t.grp.scale.setScalar(.15 + .85*Math.min(1, t.grow));
       if (t.grow >= .45 && t.mae.visible){ t.mae.visible = false; t.halves.visible = true; }
-      if (t.grow >= 1) resetTree(t, 1); // cacho novo sempre nasce com umbigo
+      if (t.grow >= .3 && !t.grp.visible){ t.grp.visible = true; t.kidShow = false; if (t.kidG) t.kidG.visible = false; }
+      if (t.grow >= 1){ resetTree(t, 1); t.grp.visible = true; t.kidShow = true; if (t.kidG) t.kidG.visible = true; } // cacho novo sempre nasce com umbigo
     }
   }
 
