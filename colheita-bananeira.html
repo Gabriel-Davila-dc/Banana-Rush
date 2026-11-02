@@ -1108,7 +1108,16 @@ const MOUNDS = [
 ];
 // a fazenda fica num platô: o morro só sobe depois da cerca do fundo e das laterais
 function farmHill(x, z){ if (z < 18 || z > 72 || Math.abs(x) > 62) return 1; const t = Math.max(clamp((Math.abs(x) - 44)/14, 0, 1), clamp((z - 47)/14, 0, 1)); return t*t*(3 - 2*t); }
+// chão da garagem dos tratores aplainado (com rampa suave em volta) para nada ficar flutuando
+let GARAGE_PAD = null; window.__gH = (x, z) => heightAt(x, z);
 function heightAt(x, z){
+  const h = heightAtRaw(x, z), x0 = -59.6, x1 = -47.6, z0 = -7.3, z1 = 4.9;
+  const dx = Math.max(x0 - x, 0, x - x1), dz = Math.max(z0 - z, 0, z - z1), d = Math.hypot(dx, dz);
+  if (d > 2.5) return h;
+  if (GARAGE_PAD === null) GARAGE_PAD = heightAtRaw(-53.6, -1.2);
+  const k = d <= 0 ? 1 : 1 - d/2.5; return h + (GARAGE_PAD - h)*k*k*(3 - 2*k);
+}
+function heightAtRaw(x, z){
   const flat = clamp((x - 60)/12, 0, 1);
   let h = (1 - flat)*((fbm(x*.034 + 11.3, z*.034 + 5.7) - .5)*3.2 + (vnoise(x*.085 + 2, z*.085 + 9) - .5)*.45);
   for (const m of MOUNDS){ const d = Math.hypot(x - m.x, z - m.z); if (d < m.r) h += (1 - flat)*m.h*(.5 + .5*Math.cos(Math.PI*d/m.r)); }
@@ -1204,7 +1213,7 @@ function farmBare(x, z){
     const inField = (Math.abs(x) < 23 && z > -29 && z < 7) || (x > 24 && x < 46.5 && z > -29 && z < 7) || (x < -24 && x > -46.5 && z > -29 && z < 7) || (Math.abs(x) < 22 && z > -53 && z < -31);
     if (inField) continue;
     if (x > 69.5 && x < 94 && z > -2 && z < 8.5) continue;
-    if (x > 56 && x < 68 && z > -4 && z < 8.6) continue; // piso da garagem dos tratores
+    if (x > -60 && x < -47.4 && z > -7.5 && z < 5.1) continue; // piso da garagem dos tratores
     if (farmBare(x, z)) continue;
     q.setFromAxisAngle(new V3(0,1,0), rnd(0, 6.3)); s.set(rnd(.8, 1.5), rnd(.7, 1.6), rnd(.8, 1.5)); p.set(x, heightAt(x, z), z);
     m.compose(p, q, s); tufts.setMatrixAt(i, m);
@@ -1343,27 +1352,78 @@ function addMuds(rect, n){
 }
 const inMud = p => muds.some(m => Math.hypot(p.x - m.x, p.z - m.z) < m.r);
 
-/* ---------- cobras: uma por bananal ---------- */
+/* ---------- cobras: uma por bananal (jararaca: corpo contínuo que segue o rastro da cabeça) ---------- */
 const snakes = [];
-const snakeMats = [L('#7a6531'), L('#3e3218')], snakeSeg = new THREE.SphereGeometry(.1, 10, 8);
+const SNK = {N:44, R:10, len:1.45};
+const snakeTex = tex(512, 64, (g, w, h) => {
+  g.fillStyle = '#6f5a33'; g.fillRect(0, 0, w, h);
+  for (let i=0;i<900;i++){ g.fillStyle = pick(['rgba(40,30,15,.25)', 'rgba(170,150,100,.18)']); g.fillRect(rnd(0, w), rnd(0, h), rnd(1, 3), rnd(1, 3)); }
+  // marcas em "V" escuras com borda clara, dos dois lados (desenho clássico da jararaca)
+  for (let x=8; x<w; x+=26){ for (const c of [h*.25, h*.75]){ g.fillStyle = 'rgba(205,180,130,.35)'; g.beginPath(); g.moveTo(x - 9, c - 13); g.lineTo(x + 9, c - 13); g.lineTo(x + 3, c + 2); g.lineTo(x - 3, c + 2); g.closePath(); g.fill();
+    g.fillStyle = '#2f2414'; g.beginPath(); g.moveTo(x - 7, c - 11); g.lineTo(x + 7, c - 11); g.lineTo(x + 2, c); g.lineTo(x - 2, c); g.closePath(); g.fill(); } }
+  // barriga clara
+  const gr = g.createLinearGradient(0, h*.4, 0, h*.6); gr.addColorStop(0, 'rgba(225,205,160,0)'); gr.addColorStop(.5, 'rgba(225,205,160,.85)'); gr.addColorStop(1, 'rgba(225,205,160,0)'); g.fillStyle = gr; g.fillRect(0, h*.4, w, h*.2);
+});
+const snakeNrm = normalTex(256, 64, (g, w, h) => { for (let y=0;y<h;y+=5) for (let x=(y/5%2)*4; x<w; x+=8){ g.fillStyle = 'rgba(255,255,255,.5)'; g.beginPath(); g.ellipse(x, y, 3.2, 2.2, 0, 0, 7); g.fill(); } }, 1.5);
+const snakeMat = L('#ffffff', {map:snakeTex, normalMap:snakeNrm, roughness:.45}); snakeMat.normalScale = new THREE.Vector2(.6, .6);
+const snakeR = u => u < .05 ? .028 + u*.1 : u < .35 ? .033 + .016*Math.sin((u - .05)/.3*Math.PI/2) : .049*Math.pow(1 - (u - .35)/.65, .85) + .003;
+function snakeHead(){
+  const hg = new THREE.Group();
+  const g = new THREE.SphereGeometry(1, 16, 12), p = g.attributes.position;
+  for (let i=0;i<p.count;i++){ let x = p.getX(i), y = p.getY(i), z = p.getZ(i); const f = (z + 1)/2; x *= 1 - .35*f; y *= (y > 0 ? 1 : .55)*(1 - .25*f); p.setXYZ(i, x*.034, y*.022, z*.052); } // cabeça triangular e achatada
+  g.computeVertexNormals();
+  const hm = new THREE.Mesh(g, L('#b3946a', {roughness:.45})); hm.castShadow = true; hg.add(hm);
+  for (const sx of [-1, 1]){ const e = new THREE.Mesh(new THREE.SphereGeometry(.0075, 8, 6), L('#1a1408', {roughness:.15})); e.position.set(sx*.024, .01, .018); hg.add(e);
+    const st = new THREE.Mesh(new THREE.BoxGeometry(.004, .003, .04), L('#2a1d0c')); st.position.set(sx*.022, .006, 0); st.rotation.y = sx*.25; hg.add(st); }
+  const tongue = new THREE.Group(); tongue.position.set(0, -.004, .05); hg.add(tongue);
+  const tm = L('#2a0c12', {roughness:.6}); { const b = new THREE.Mesh(new THREE.BoxGeometry(.003, .002, .035), tm); b.position.z = .017; tongue.add(b); for (const s of [-1, 1]){ const f = new THREE.Mesh(new THREE.BoxGeometry(.002, .002, .016), tm); f.position.set(s*.004, 0, .04); f.rotation.y = s*.4; tongue.add(f); } }
+  hg.userData.tongue = tongue; return hg;
+}
+function snakeBodyGeo(){
+  const N = SNK.N, R = SNK.R, g = new THREE.BufferGeometry(), pos = new Float32Array(N*(R + 1)*3), uv = new Float32Array(N*(R + 1)*2), idx = [];
+  for (let i=0;i<N;i++) for (let j=0;j<=R;j++){ const k = i*(R + 1) + j; uv[k*2] = i/(N - 1)*3; uv[k*2 + 1] = j/R; }
+  for (let i=0;i<N - 1;i++) for (let j=0;j<R;j++){ const a = i*(R + 1) + j, b = a + R + 1; idx.push(a, a + 1, b, b, a + 1, b + 1); }
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); g.setIndex(idx); return g;
+}
 function fieldRects(){
   const r = [[-21, 21, -28, 6]];
   for (let i=0;i<save.lv.terra;i++){ const q = PLOTS[i].rect; r.push([q[0] + 1, q[1] - 1, q[2] + 1, q[3] - 1]); }
   return r;
 }
 function spawnSnakes(){
-  for (const sn of snakes) scene.remove(sn.g);
+  for (const sn of snakes){ scene.remove(sn.body); scene.remove(sn.head); }
   snakes.length = 0;
   for (const r of fieldRects()){
-    const g = new THREE.Group(), segs = [];
-    for (let i=0;i<14;i++){ const m = new THREE.Mesh(snakeSeg, snakeMats[i%3 === 0 ? 1 : 0]); const k = 1 - i/17; m.scale.set(k, k*.7, k); m.castShadow = true; g.add(m); segs.push(m); }
-    segs[0].scale.set(1.2, .8, 1.5);
-    for (const sx of [-.05, .05]){ const e = new THREE.Mesh(new THREE.SphereGeometry(.018, 6, 4), M.eye); e.position.set(sx, .05, .08); segs[0].add(e); }
-    scene.add(g);
+    const body = new THREE.Mesh(snakeBodyGeo(), snakeMat); body.castShadow = true; body.frustumCulled = false; scene.add(body);
+    const head = snakeHead(); scene.add(head);
     let x = 0, z = 0, guard = 0;
     do { x = rnd(r[0], r[1]); z = rnd(r[2], r[3]); } while (guard++ < 40 && (Math.hypot(x - player.pos.x, z - player.pos.z) < 9 || onRoad(x, z, 1.5)));
-    snakes.push({g, segs, rect:r, x, z, dir:rnd(0, 6.3), turn:0, cool:0, ph:rnd(0, 6)});
+    const dir = rnd(0, 6.3), trail = []; for (let i=0;i<80;i++) trail.push({x:x - Math.cos(dir)*i*.025, z:z - Math.sin(dir)*i*.025});
+    snakes.push({body, head, trail, rect:r, x, z, dir, turn:0, cool:0, ph:rnd(0, 6), tongueT:0});
   }
+}
+// espinha: anda pelo rastro da cabeça e monta o corpo como um tubo achatado
+const _sp = [];
+function poseSnake(sn){
+  const N = SNK.N, R = SNK.R, step = SNK.len/(N - 1), tr = sn.trail;
+  let ti = 0; _sp.length = 0; _sp.push({x:sn.x, z:sn.z});
+  let px = sn.x, pz = sn.z;
+  for (let i=1;i<N;i++){
+    let need = step;
+    while (ti < tr.length){ const q = tr[ti], d = Math.hypot(q.x - px, q.z - pz); if (d >= need){ px += (q.x - px)*need/d; pz += (q.z - pz)*need/d; break; } need -= d; px = q.x; pz = q.z; ti++; }
+    _sp.push({x:px, z:pz});
+  }
+  const pos = sn.body.geometry.attributes.position, a = pos.array;
+  for (let i=0;i<N;i++){
+    const P = _sp[i], Q = _sp[Math.min(N - 1, i + 1)], O = _sp[Math.max(0, i - 1)];
+    let tx = O.x - Q.x, tz = O.z - Q.z; const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
+    const nx = -tz, nz = tx, r = snakeR(i/(N - 1)), y = heightAt(P.x, P.z) + r*.72;
+    for (let j=0;j<=R;j++){ const an = j/R*Math.PI*2, c = Math.cos(an), s = Math.sin(an), k = (i*(R + 1) + j)*3;
+      const yy = s > 0 ? s*.72 : s*.5; // barriga achatada encostada no chão
+      a[k] = P.x + nx*c*r; a[k + 1] = y + yy*r; a[k + 2] = P.z + nz*c*r; }
+  }
+  pos.needsUpdate = true; sn.body.geometry.computeVertexNormals();
+  const H = _sp[0], H2 = _sp[2]; sn.head.position.set(H.x, heightAt(H.x, H.z) + .03, H.z); sn.head.rotation.y = Math.atan2(H.x - H2.x, H.z - H2.z);
 }
 function dropOneBunch(){
   const c = player.carry.pop(); if (!c) return;
@@ -1405,14 +1465,15 @@ function updateSnakes(dt){
       if (sn.x < r[0] || sn.x > r[1] || sn.z < r[2] || sn.z > r[3]) sn.dir = Math.atan2((r[2] + r[3])/2 - sn.z, (r[0] + r[1])/2 - sn.x);
       if (sn.cool > 0) sn.dir = angLerp(sn.dir, Math.atan2(sn.z - player.pos.z, sn.x - player.pos.x), Math.min(1, dt*4));
       const sp = sn.cool > 0 ? 2.2 : .9;
-      sn.x += Math.cos(sn.dir)*sp*dt; sn.z += Math.sin(sn.dir)*sp*dt;
+      sn.ph += dt*(sn.cool > 0 ? 7 : 4); const hd = sn.dir + Math.sin(sn.ph)*.75;
+      sn.x += Math.cos(hd)*sp*dt; sn.z += Math.sin(hd)*sp*dt;
       if (Math.hypot(player.pos.x - sn.x, player.pos.z - sn.z) < .75 && sn.cool <= 0 && !(player.stunT > 0)){ sn.cool = 5; snakeBite(); }
       if (sn.cool <= 0) for (const n of [...helpers, ...workers]){ if (!(n.stunT > 0) && Math.hypot(n.pos.x - sn.x, n.pos.z - sn.z) < .75){ sn.cool = 5; npcStung(n, 'cobra'); break; } }
     }
-    sn.ph += dt*(sn.cool > 0 ? 9 : 5);
-    const fx = Math.cos(sn.dir), fz = Math.sin(sn.dir);
-    sn.segs.forEach((m, i) => { const w = Math.sin(sn.ph - i*.7)*.14*Math.min(1, i/3), sx = sn.x - fx*i*.17 - fz*w, sz = sn.z - fz*i*.17 + fx*w; m.position.set(sx, heightAt(sx, sz) + .07, sz); });
-    sn.segs[0].rotation.y = Math.atan2(fx, fz);
+    // o rastro da cabeça vira o corpo; a língua sai de vez em quando
+    { const t0 = sn.trail[0]; if (!t0 || Math.hypot(sn.x - t0.x, sn.z - t0.z) > .02){ sn.trail.unshift({x:sn.x, z:sn.z}); if (sn.trail.length > 120) sn.trail.pop(); } }
+    sn.tongueT -= dt; if (sn.tongueT < -.6) sn.tongueT = rnd(.25, .5); const tg = sn.head.userData.tongue; tg.visible = sn.tongueT > 0; tg.scale.z = .6 + Math.abs(Math.sin(now*28))*.5;
+    const far = Math.hypot(sn.x - player.pos.x, sn.z - player.pos.z) > 45; sn.body.visible = sn.head.visible = !far; if (!far) poseSnake(sn);
   }
 }
 const snakeNear = d => snakes.some(sn => Math.hypot(player.pos.x - sn.x, player.pos.z - sn.z) < d);
@@ -1787,7 +1848,7 @@ function buildTractorModel(){
 buildTractorModel();
 function buildCart(){
   const sz = CART_SIZES[Math.min(3, save.lv.carreta)], g = tractor.grp;
-  if (tractor.cartGrp){ g.remove(tractor.cartGrp); tractor.wheels = tractor.wheels.filter(w => !tractor.cartWheels.includes(w)); }
+  if (tractor.cartPiv){ g.remove(tractor.cartPiv); tractor.cartPiv = null; } if (tractor.cartGrp){ g.remove(tractor.cartGrp); tractor.wheels = tractor.wheels.filter(w => !tractor.cartWheels.includes(w)); }
   const cg = new THREE.Group(), cw = [], front = -2.85, cx = front - sz.L/2, wy = .95 + sz.h/2 + .02;
   const add = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; cg.add(m); return m; };
   add(new THREE.BoxGeometry(1.4, .1, .12), M.metal, -2.25, .7, 0);
@@ -1814,7 +1875,10 @@ function buildCart(){
     holder.rotation.y = ((i*1.3)%1 - .5)*.6; holder.scale.setScalar(.8); holder.visible = false;
     cg.add(holder); tractor.loadMeshes.push(holder);
   }
-  g.add(cg);
+  const HITCH = -1.55; // engate na barra de tração
+  if (tractor.cartPiv) g.remove(tractor.cartPiv);
+  const piv = new THREE.Group(); piv.position.x = HITCH; cg.position.x = -HITCH; piv.add(cg); g.add(piv);
+  tractor.cartPiv = piv; tractor.hitch = HITCH; tractor.cartL = Math.abs(axX.reduce((a, b) => a + b, 0)/axX.length - HITCH); tractor.cartA = null;
   tractor.cartGrp = cg; tractor.cartWheels = cw;
   tractor.cartOff = -cx; tractor.cartBack = -(front - sz.L) + .1; tractor.cartHalfW = Math.max(1.2, sz.W/2 + .3);
   tractor.cargoShown = -1;
@@ -1822,7 +1886,17 @@ function buildCart(){
 // eixos do trator: +x local é a frente; a carreta fica atrás
 const tractorAxisX = y => ({x:Math.cos(y), z:-Math.sin(y)});
 const tractorAxisZ = y => ({x:Math.sin(y), z:Math.cos(y)});
-const cartPos = () => { const a = tractorAxisX(tractor.yaw), o = tractor.cartOff; return new V3(tractor.x - a.x*o, 0, tractor.z - a.z*o); };
+function updateHitch(T){
+  if (!T.cartPiv) return;
+  const a = tractorAxisX(T.yaw), hx = T.x + a.x*T.hitch, hz = T.z + a.z*T.hitch, L = T.cartL;
+  let A = T.cartA;
+  if (!A || Math.abs(Math.hypot(hx - A.x, hz - A.z) - L) > .8){ A = T.cartA = {x:hx - a.x*L, z:hz - a.z*L}; } // reposicionou: carreta reta
+  const dx = hx - A.x, dz = hz - A.z, dl = Math.hypot(dx, dz) || 1; A.x = hx - dx/dl*L; A.z = hz - dz/dl*L;
+  T.cartYaw = Math.atan2(-(hz - A.z), hx - A.x);
+  let rel = T.cartYaw - T.yaw; rel = Math.atan2(Math.sin(rel), Math.cos(rel)); rel = Math.max(-1.3, Math.min(1.3, rel)); // não deixa "canivetar"
+  T.cartPiv.rotation.y = rel; T.cartYaw = T.yaw + rel;
+}
+const cartPos = () => { if (tractor.cartYaw === undefined || !tractor.cartPiv) { const a = tractorAxisX(tractor.yaw), o = tractor.cartOff; return new V3(tractor.x - a.x*o, 0, tractor.z - a.z*o); } const a = tractorAxisX(tractor.yaw), c = tractorAxisX(tractor.cartYaw), h = tractor.hitch, o = tractor.cartOff + h; return new V3(tractor.x + a.x*h - c.x*o, 0, tractor.z + a.z*h - c.z*o); };
 // onde a carreta estaciona em cada talhão (0 principal, 1 leste, 2 oeste, 3 fundo)
 const DEPOT = {x:80, z:10};
 const cartHome = () => tractor.state === 'here' || tractor.state === 'full' ? cartPos() : tractor.home.clone();
@@ -1852,16 +1926,35 @@ function routeTo(target, isCart){
   return pts;
 }
 function tractorPts(T){
-  const ax = tractorAxisX(T.yaw), az = tractorAxisZ(T.yaw), B = T.cartBack, HW = T.cartHalfW, out = [];
+  const ax = tractorAxisX(T.yaw), az = tractorAxisZ(T.yaw), B = T.cartBack, HW = T.cartHalfW - .3, out = []; // largura de verdade da carreta
   for (const lx of [-B, -B*.66, -B*.33, 0, 1.05, 2.1]) for (const lz of [-HW, 0, HW]) out.push({x:T.x + ax.x*lx + az.x*lz, z:T.z + ax.z*lx + az.z*lz});
   return out;
 }
 const isDriving = T => !!(T.route && T.route.length) && !(T.waitT > 0);
 // desvio: encosta de lado, longe do caminho do outro trator, e depois segue o que ia fazer
+// lugar onde um trator pode parar: sem cerca, sem galpão, sem garagem e sem bananeira no caminho
+function tractorFree(x, z, hw, noTrees){
+  if (z + hw > 12.6 && z - hw < 14.2) return false;                       // cerca da estrada
+  if (x > 69.5 && x < 91.8 && z > -1.8 && z < 7.35 + hw) return false;      // plataforma do galpão
+  if (x > -60.1 && x < -47 && z > -7.5 && z < 4.9 + hw) return false;      // garagem
+  if (noTrees) return true;
+  for (const t of trees){ if (t.state === 'falling') continue; if (Math.hypot(t.x - x, t.z - z) < hw + .6) return false; }
+  return true;
+}
+// caminho livre de ponta a ponta (confere de meio em meio metro)
+function pathFree(a, b, hw){ const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z)/.5)); for (let k=1;k<=n;k++){ if (!tractorFree(a.x + (b.x - a.x)*k/n, a.z + (b.z - a.z)*k/n, hw)) return false; } return true; }
+// desvio: procura o primeiro lugar seguro para encostar; se ali não tiver, dá ré pela estrada até achar
 function sideStep(Y, O){
-  const az = tractorAxisZ(O.yaw), hy = tractorAxisX(Y.yaw); let side = Math.sign((Y.x - O.x)*az.x + (Y.z - O.z)*az.z) || 1;
-  const dist = O.cartHalfW + Y.cartHalfW + 2.4;
-  return {x:Y.x + az.x*side*dist + hy.x*2.5, z:Y.z + az.z*side*dist + hy.z*2.5};
+  const az = tractorAxisZ(O.yaw), hy = tractorAxisX(Y.yaw), hw = Y.cartHalfW; let side = Math.sign((Y.x - O.x)*az.x + (Y.z - O.z)*az.z) || 1;
+  for (const back of [0, 5, 10, 15, 20]){
+    const B = {x:Y.x - hy.x*back, z:Y.z - hy.z*back};
+    if (back && !pathFree(Y, B, hw*.8)) break;
+    for (const sd of [side, -side]) for (const k of [1, .8, .6]){
+      const dist = (O.cartHalfW + hw + 1.2)*k, P = {x:B.x + az.x*sd*dist + hy.x*2.5, z:B.z + az.z*sd*dist + hy.z*2.5};
+      if (tractorFree(P.x, P.z, hw) && pathFree(B, P, hw*.8)) return back ? [Object.assign(B, {rev:true}), P] : [P];
+    }
+  }
+  return null;
 }
 function driveRoute(dt, spd){
   let moved = 0;
@@ -1882,29 +1975,35 @@ function driveRoute(dt, spd){
       const me = tractor, isMain = me === mainT;
       for (const O of allTractors()){
         if (O === me || !O.grp || !O.grp.visible) continue;
-        const fx = dx/d, fz = dz/d, inPath = p => { const qx = p.x - me.x, qz = p.z - me.z, lx = qx*fx + qz*fz, lat = Math.abs(qx*fz - qz*fx); return lx > 1.2 && lx < Math.min(6.5, d + 3) && lat < me.cartHalfW + .7; }; // olha para onde vai andar, não para onde o nariz aponta
+        const fx = dx/d, fz = dz/d, inPath = p => { const qx = p.x - me.x, qz = p.z - me.z, lx = qx*fx + qz*fz, lat = Math.abs(qx*fz - qz*fx); return lx > 1.2 && lx < Math.min(6.5, d + 3) && lat < me.cartHalfW - .1; }; // passa raspando com uns 20 cm de folga // olha para onde vai andar, não para onde o nariz aponta
         if (!tractorPts(O).some(inPath)) continue;
         const moving = isDriving(O);
         me.blockT = (me.blockT || 0) + dt;
         if (isMain && !moving && me.blockT > 1.2 && !(O.sideT > now)){
           // o outro está parado ou esperando na frente: ele encosta de lado para o principal passar
           const P = sideStep(O, me); O.sideT = now + 6; O.waitT = 0;
-          if (O.state === 'here'){ O.route = [P]; O.state = 'moving'; O.home.set(P.x - tractorAxisX(O.yaw).x*O.cartOff, 0, P.z - tractorAxisX(O.yaw).z*O.cartOff); } else O.route.unshift(P);
+          if (!P){} else if (O.state === 'here'){ const Q = P[P.length - 1]; O.route = P; O.state = 'moving'; O.home.set(Q.x - tractorAxisX(O.yaw).x*O.cartOff, 0, Q.z - tractorAxisX(O.yaw).z*O.cartOff); } else O.route.unshift(...P);
         }
-        if (!isMain && me.blockT > 1.5 && !(me.sideT > now)){ me.sideT = now + 6; me.route.unshift(sideStep(me, O)); me.waitT = 0; me.blockT = 0; return 0; } // o 2º trator desvia sozinho
-        if (isMain && me.blockT > 9) continue; // não tem jeito: segue (evita travar para sempre)
+        if (!isMain && me.blockT > 1.5 && !(me.sideT > now)){ me.sideT = now + 6; const P = sideStep(me, O); if (P){ me.route.unshift(...P); me.waitT = 0; me.blockT = 0; return 0; } } // o 2º trator desvia sozinho
+        if (isMain && me.blockT > 25) continue; // último recurso para não travar o dia inteiro
         me.waitT = (me.waitT || 0) + dt;
         return 0;
       }
       me.blockT = 0; }
     // manobra de trator de verdade: anda para onde o nariz aponta, vira aos poucos e diminui na curva
     { let err = target - tractor.yaw; err = Math.atan2(Math.sin(err), Math.cos(err));
+      if ((w.rev && Math.abs(err) > 1.6) || (Math.abs(err) > 2.1 && d < 7)){ // destino atrás e perto: engata a ré e vai de costas, corrigindo a direção
+        let er = err > 0 ? err - Math.PI : err + Math.PI; tractor.yaw += Math.max(-1.1*dt, Math.min(1.1*dt, -er*.8));
+        const vr = Math.min(spd*.35, Math.max(.5, d*1.2)), st = Math.min(d, vr*dt); tractor.x += dx/d*st; tractor.z += dz/d*st; moved -= st; tractor.reverse = true; break; }
+      tractor.reverse = false;
       const turnRate = 1.7, tr = Math.max(-turnRate*dt, Math.min(turnRate*dt, err)); tractor.yaw += tr;
       const al = Math.cos(Math.min(Math.abs(err), Math.PI/2));
       let v = spd*Math.max(.16, al*al); if (last) v = Math.min(v, Math.max(.7, d*1.4));
       const step = Math.min(d, v*dt), hx = Math.cos(tractor.yaw), hz = -Math.sin(tractor.yaw), k = d < 1.6 ? .55 : .08;
       let mx = hx*(1 - k) + dx/d*k, mz = hz*(1 - k) + dz/d*k; const ml = Math.hypot(mx, mz) || 1;
-      tractor.x += mx/ml*step; tractor.z += mz/ml*step; moved += step; }
+      // não passa da cerca nem entra no galpão ou na garagem: se o próximo passo bate, só esterça (manobra no lugar)
+      const nx = tractor.x + mx/ml*step, nz = tractor.z + mz/ml*step, hwT = tractor.cartHalfW - .3;
+      if (tractorFree(nx, nz, hwT, true) || !tractorFree(tractor.x, tractor.z, hwT, true)){ tractor.x = nx; tractor.z = nz; moved += step; } }
     break;
   }
   return moved;
@@ -3069,6 +3168,7 @@ const snd = {
     else if (kind < .75){ const base = rnd(1800, 2600); for (let i=0;i<4 + (Math.random()*4|0);i++) voice({type:'sine', f:[base + rnd(-300, 500), base + rnd(-200, 700)], dur:rnd(.06, .12), vol:.03*k, attack:.008, delay:i*rnd(.09, .15), pan}); }
     else voice({type:'sine', f:[3200, 2200, 2900], dur:.45, vol:.03*k, attack:.02, pan, vib:[18, 160]}); },
 };
+const engineOn = T => T.state !== 'garage' && T.state !== 'away' && (T.engT || 0) < 4;
 function updateAmbience(){
   if (!amb) return;
   const t = AC.currentTime, run = game.running, se = typeof season === 'function' ? season() : null;
@@ -3079,7 +3179,8 @@ function updateAmbience(){
   const hot = run && !game.rain && se && /ver|prim/i.test(se.nome || '');
   amb.cic.g.gain.setTargetAtTime(0, t, .5); amb.cic.lg.gain.setTargetAtTime(hot ? .012 + .008*Math.max(0, Math.sin(now*.05)) : 0, t, 1.5);
   let best = null, bd = 1e9;
-  for (const T of allTractors()){ if (T.state === 'garage') continue; const d = Math.hypot(T.x - player.pos.x, T.z - player.pos.z); if (d < bd){ bd = d; best = T; } }
+  // motor só ligado andando ou logo depois de parar: parado mais de 4 s o tratorista desliga
+  for (const T of allTractors()){ if (T.state === 'garage' || !engineOn(T)) continue; const d = Math.hypot(T.x - player.pos.x, T.z - player.pos.z); if (d < bd){ bd = d; best = T; } }
   const moving = !!(best && best.route && best.route.length);
   amb.engine.g.gain.setTargetAtTime(run && best ? Math.pow(clamp(1 - bd/50, 0, 1), 1.4)*(moving ? .55 : .3) : 0, t, .3);
   amb.engine.fire.frequency.setTargetAtTime(moving ? 42 : 27, t, .5); amb.engine.rat.frequency.setTargetAtTime(moving ? 168 : 108, t, .5); amb.engine.lp.frequency.setTargetAtTime(moving ? 650 : 420, t, .5);
@@ -3350,10 +3451,11 @@ const stairAt = (x, z) => STAIRS.find(S => { const u = S.ax === 'x' ? x : z, c =
   }
 })();
 /* ---------- garagem dos tratores ---------- */
+const GOFF = {x:-115.6, z:-3.5}; // deslocamento da garagem (desenhada em volta de x 62, z 2)
 const GARAGE = {x0:56.4, x1:67.6, z0:-3.4, z1:8.0, bays:[59.4, 64.6], z:5.6, boxes:[], hammock:null}; // cabe o trator com a carreta gigante, de frente para a estrada
 // rancho de madeira para os tratores: pilares de eucalipto roliço, telhado de zinco enferrujado, parede de tábua velha e chão de terra
 (() => {
-  const G = new THREE.Group(), y0 = heightAt(62, 3);
+  const G = new THREE.Group(), y0 = window.__gH(62 + GOFF.x, 3 + GOFF.z), heightAt = (x, z) => window.__gH(x + GOFF.x, z + GOFF.z);
   const bark = tex(64, 256, (g, w, h) => { g.fillStyle = '#6b5440'; g.fillRect(0, 0, w, h); for (let i=0;i<260;i++){ g.fillStyle = pick(['rgba(40,30,20,.35)', 'rgba(150,130,100,.25)', 'rgba(90,70,50,.4)']); g.fillRect(rnd(0, w), rnd(0, h), rnd(1, 4), rnd(8, 40)); } });
   const plank = tex(256, 256, (g, w, h) => { for (let x=0;x<w;x+=32){ const c = pick(['#7d6a55', '#8a7660', '#6e5d4b', '#94816a', '#5f5142']); g.fillStyle = c; g.fillRect(x, 0, 30, h); for (let i=0;i<40;i++){ g.fillStyle = pick(['rgba(30,25,20,.25)', 'rgba(200,190,170,.12)']); g.fillRect(x + rnd(0, 30), rnd(0, h), 1, rnd(10, 80)); } g.fillStyle = 'rgba(20,15,10,.8)'; g.fillRect(x + 30, 0, 2, h); g.fillStyle = 'rgba(40,30,20,.6)'; for (const y of [30, 220]){ g.beginPath(); g.arc(x + 15, y, 2, 0, 7); g.fill(); } } });
   const rust = tex(256, 256, (g, w, h) => { g.fillStyle = '#8f8f88'; g.fillRect(0, 0, w, h); for (let i=0;i<180;i++){ g.fillStyle = pick(['rgba(140,70,30,.45)', 'rgba(110,50,20,.5)', 'rgba(170,100,50,.35)', 'rgba(60,60,55,.3)']); g.beginPath(); g.ellipse(rnd(0, w), rnd(0, h), rnd(3, 26), rnd(3, 18), rnd(0, 3), 0, 7); g.fill(); } for (let x=0;x<w;x+=16){ g.fillStyle = 'rgba(0,0,0,.15)'; g.fillRect(x, 0, 3, h); } });
@@ -3373,9 +3475,9 @@ const GARAGE = {x0:56.4, x1:67.6, z0:-3.4, z1:8.0, bays:[59.4, 64.6], z:5.6, box
   // terças e caibros de madeira
   for (const z of [z0 + .15, z1 - .15]){ const h = z > 0 ? 3.7 : 2.9; add(new THREE.BoxGeometry(x1 - x0 + .4, .14, .12), woodM, cx, h - .05, z); }
   const slope = Math.atan2(3.7 - 2.9, D);
-  for (let x = x0 + .3; x < x1; x += 1.1){ const r = add(new THREE.BoxGeometry(.08, .1, D + .5), woodM, x, 3.35, (z0 + z1)/2); r.rotation.x = slope; }
+  for (let x = x0 + .3; x < x1; x += 1.1){ const r = add(new THREE.BoxGeometry(.08, .1, D + .5), woodM, x, 3.37, (z0 + z1)/2); r.rotation.x = -slope; }
   // telhas de zinco enferrujadas, uma do lado da outra, meio tortas
-  for (let x = x0 - .3; x < x1 + .3; x += .95){ const t = new THREE.PlaneGeometry(1.0, D + 1.1, 1, 1).rotateX(-Math.PI/2); const m = add(t, zincM, x + .5, 3.45 + rnd(-.02, .02), (z0 + z1)/2); m.rotation.x = slope; m.rotation.z = rnd(-.015, .015); }
+  for (let x = x0 - .3; x < x1 + .3; x += .95){ const t = new THREE.PlaneGeometry(1.0, D + 1.1, 1, 1).rotateX(-Math.PI/2); const m = add(t, zincM, x + .5, 3.45 + rnd(-.01, .01), (z0 + z1)/2); m.rotation.x = -slope; m.rotation.z = rnd(-.015, .015); }
   // parede de tábua no fundo e meia parede nos lados
   { const back = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, 2.7, .06), plankM); back.position.set(cx, 1.35, z0 + .05); back.castShadow = back.receiveShadow = true; G.add(back); box(x0, x1, z0, z0 + .2);
     for (const x of [x0 + .03, x1 - .03]){ const s = new THREE.Mesh(new THREE.BoxGeometry(.06, 1.6, D*.6), plankM); s.position.set(x, .8, z0 + D*.3); s.castShadow = s.receiveShadow = true; G.add(s); box(x - .12, x + .12, z0, z0 + D*.6); } }
@@ -3400,7 +3502,11 @@ const GARAGE = {x0:56.4, x1:67.6, z0:-3.4, z1:8.0, bays:[59.4, 64.6], z:5.6, box
     const cm = new THREE.Mesh(cloth, L('#ffffff', {map:clothT, roughness:.95, side:THREE.DoubleSide})); cm.castShadow = true; sw.add(cm);
     for (const s of [-1, 1]){ const rope = new THREE.Mesh(new THREE.CylinderGeometry(.012, .012, Lh*.16, 5), L('#d8c9a0')); rope.rotation.x = Math.PI/2; rope.position.z = s*Lh*.42; sw.add(rope); }
     GARAGE.hammock = {g:hg, sw, y:1.55, z:(a.z + b.z)/2}; box(cx - .5, cx + .5, z0, .6); }
-  G.position.y = y0; scene.add(G);
+  G.position.set(GOFF.x, y0, GOFF.z); scene.add(G);
+  // tudo que é usado no mundo passa para a posição nova
+  GARAGE.boxes = GARAGE.boxes.map(b => [b[0] + GOFF.x, b[1] + GOFF.x, b[2] + GOFF.z, b[3] + GOFF.z]);
+  GARAGE.bays = GARAGE.bays.map(x => x + GOFF.x); GARAGE.z += GOFF.z;
+  for (const k of ['x0', 'x1']) GARAGE[k] += GOFF.x; for (const k of ['z0', 'z1']) GARAGE[k] += GOFF.z;
 })();
 // dia sem corte: tratores desligados na garagem e os tratoristas fazendo manutenção ou descansando
 const garageCrew = [];
@@ -3423,7 +3529,7 @@ function setGarage(on){
   });
 }
 function updateGarageCrew(){
-  const y0 = heightAt(62, 3);
+  const y0 = heightAt(62 + GOFF.x, 3 + GOFF.z);
   garageCrew.forEach((c, i) => {
     if (!c || !c.R.g.visible) return;
     const R = c.R, T = allTractors()[i] || mainT;
@@ -3796,7 +3902,7 @@ function updateTractor(dt, follow, isMain){
   if (tractor.state === 'here'){
     const cp = cartPos(), far = Math.hypot(follow.x - cp.x, follow.z - cp.z);
     const tgt = cartTargetFor(follow), gain = far - Math.hypot(follow.x - tgt.x, follow.z - tgt.z);
-    if (game.running && !(game.mis && isMain) && far > (nearT ? 7 : 12) && gain > (nearT ? 3 : 6)){
+    if (game.running && !(game.mis && isMain) && !(SALE.on && !isMain) && far > (nearT ? 7 : 12) && gain > (nearT ? 3 : 6)){
       tractor.wantT += dt;
       if (tractor.wantT > (save.lv.trator >= 2 ? .5 : 1.4)){ tractor.home.set(tgt.x, 0, tgt.z); tractor.route = routeTo(tgt, true); tractor.state = 'moving'; tractor.wantT = 0; if (isMain) float('O trator vai até você', headPos(), '#fff6c8'); else float('2º trator vai até o Toninho', new V3(tractor.x, 3, tractor.z), '#fff6c8'); }
     } else tractor.wantT = 0;
@@ -3821,6 +3927,7 @@ function updateTractor(dt, follow, isMain){
   const pp = player.pos;
   tractor.behind = pp.z < tb.z1 && pp.z > tb.z0 - 4.5 && pp.x > tb.x0 - .6 && pp.x < tb.x1 + .6;
   tractor.grp.position.x = tractor.x; tractor.grp.position.z = tractor.z; tractor.grp.rotation.y = tractor.yaw;
+  updateHitch(tractor);
   {
     // o trator acompanha o chão e inclina na subida e na descida
     const a = tractorAxisX(tractor.yaw), hf = heightAt(tractor.x + a.x*1.8, tractor.z + a.z*1.8), hb = heightAt(tractor.x - a.x*1.4, tractor.z - a.z*1.4);
@@ -3831,7 +3938,8 @@ function updateTractor(dt, follow, isMain){
   if (tractor.driver) tractor.driver.position.y = .58 + (tdx ? Math.sin(now*22)*.015 : Math.sin(now*12)*.004);
   syncCargo();
   { const solid = tractorFade > .6, n = Math.min(tractor.loadMeshes.length, tractor.cargo.length); tractor.loadMeshes.forEach((h, i) => { h.visible = solid && i < n; }); if (tractor.driver) tractor.driver.visible = solid; }
-  if (Math.random() < dt*(tdx ? 16 : 3)){
+  tractor.engT = (tdx || (tractor.route && tractor.route.length)) ? 0 : (tractor.engT || 0) + dt;
+  if (engineOn(tractor) && Math.random() < dt*(tdx ? 16 : 3)){
     spawnPart(M.smoke, smokeGeo, tractor.grp.localToWorld(new V3(1.25, 2.75, .3)), new V3(rnd(-.3, .3), rnd(1, 1.6), rnd(-.3, .3)), 1.4);
   }
 
@@ -4269,7 +4377,7 @@ function updateHelpers(dt){
             const sc = d - bunchValue(b)/8; if (sc < bs){ bs = sc; bb = b; }
           }
           if (bb){ h.bunch = bb; bb.claimedBy = h; helperGoTo(h, bb.x, bb.z, .5); h.state = 'toBunch'; }
-          else if (!h.d.cut) h.idleT = .8;
+          else if (!h.d.cut && now - (game.pCutT || 0) < 8) h.idleT = .8; // o jogador parou de cortar: os ajudantes também cortam os melhores cachos
           else if (game.mis || SALE.on) h.idleT = 1.5; // cortador só corta no dia de corte e para quando começa a venda
           else {
             let best = null, bs = 1e9;
@@ -4382,7 +4490,7 @@ function resetDay(){
   }
   for (const f of floats) f.el.remove(); floats.length = 0;
   for (const t of trees){ if (t.state === 'falling') startRegrow(t, 0); }
-  Object.assign(game, {t:dayLength(), kg:0, count:0, perfect:0, lost:0, earned:0, byQ:{magro:0, medio:0, gordo:0}});
+  Object.assign(game, {pCutT:now, t:dayLength(), kg:0, count:0, perfect:0, lost:0, earned:0, byQ:{magro:0, medio:0, gordo:0}});
   Object.assign(tractor, {x:0, z:10, yaw:0, parkYaw:0, spot:0, route:[], wantT:0, state:'here', load:0, trips:0, cargo:[]}); tractor.home.set(-tractor.cartOff, 0, 10);
   if (tractor2){ Object.assign(tractor2, {x:14, z:10, yaw:0, parkYaw:0, route:[], wantT:0, state:'here', load:0, trips:0, cargo:[]}); tractor2.home.set(14 - tractor2.cartOff, 0, 10); }
   spawnSnakes(); player.stunT = 0; SALE.reset();
@@ -4584,7 +4692,7 @@ function fellTree(t, from){
 function actionUp(){
   pressed = false;
   if (!charge.active) return;
-  charge.active = false; $('power').hidden = true;
+  charge.active = false; $('power').hidden = true; game.pCutT = now; // o jogador está cortando
   const v = charge.v, z0 = charge.z0, z1 = charge.z0 + charge.zw, t = charge.tree;
   const dist = v < z0 ? z0 - v : v > z1 ? v - z1 : 0;
   const lvF = save.lv.foice;
@@ -4637,10 +4745,10 @@ function pushOut(p){
   if (p.z <= 13.4){
     if (p.z > 12.9 && !gate) p.z = 12.9;
     const xl = save.lv.terra >= 2 ? -46.5 : -21.5, xr = save.lv.terra >= 1 ? 46.5 : 21.5, zb = save.lv.terra >= 3 ? -53 : -28.5;
-    const ok = (x, z) => z <= 13.4 && x >= xl && ((x >= 50 && x <= 75.5 && z >= -2.6) || (x <= xr && z >= zb) || (z >= 6.6 && x <= 104) || (x >= 75.5 && x <= 104 && z >= -1.6));
+    const ok = (x, z) => z <= 13.4 && x >= xl && ((x >= 50 && x <= 75.5 && z >= -2.6) || (x >= -60.5 && x <= -46.5 && z >= -7.2) || (x <= xr && z >= zb) || (z >= 6.6 && x <= 104) || (x >= 75.5 && x <= 104 && z >= -1.6));
     const L0 = pushOut.last || (pushOut.last = {x:2, z:6.5});
     if (!ok(p.x, p.z)){ if (ok(L0.x, p.z)) p.x = L0.x; else if (ok(p.x, L0.z)) p.z = L0.z; else { p.x = clamp(L0.x, xl, 104); p.z = Math.max(L0.z, zb); } }
-    if (p.x > 52 && p.x < 70) for (const b of GARAGE.boxes){ const r = .35;
+    if (p.x > -61 && p.x < -46) for (const b of GARAGE.boxes){ const r = .35;
       if (p.x > b[0] - r && p.x < b[1] + r && p.z > b[2] - r && p.z < b[3] + r){ const o = [[p.x - (b[0] - r), 'x', b[0] - r], [(b[1] + r) - p.x, 'x', b[1] + r], [p.z - (b[2] - r), 'z', b[2] - r], [(b[3] + r) - p.z, 'z', b[3] + r]].sort((a, c) => a[0] - c[0])[0]; p[o[1]] = o[2]; } }
     if (p.x > 70){
       saleSolids(p);
