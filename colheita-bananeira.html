@@ -85,11 +85,12 @@ canvas{display:block;width:100%;height:100%;touch-action:none;filter:saturate(1.
 .ptrack{position:relative;width:100%;height:18px;border-radius:9px;background:linear-gradient(90deg,#7a2a1c,#c8402c 55%,#e0a030);overflow:hidden}
 .pzone{position:absolute;top:0;bottom:0;background:var(--good);box-shadow:0 0 0 2px #fff8 inset}
 .pneedle{position:absolute;top:-3px;bottom:-3px;width:5px;margin-left:-2px;background:var(--cream);border-radius:3px;box-shadow:0 0 6px #000}
-.joy{position:absolute;z-index:3;left:max(18px,env(safe-area-inset-left,0px));bottom:18px;width:134px;height:134px;border-radius:50%;background:rgba(14,34,19,.45);border:2px solid rgba(246,241,216,.35);display:none;touch-action:none}
+.joy{position:absolute;z-index:3;left:max(26px,env(safe-area-inset-left,0px));bottom:calc(64px + env(safe-area-inset-bottom,0px));width:134px;height:134px;border-radius:50%;background:rgba(14,34,19,.45);border:2px solid rgba(246,241,216,.35);display:none;touch-action:none}
 .knob{position:absolute;left:50%;top:50%;width:58px;height:58px;margin:-29px 0 0 -29px;border-radius:50%;background:var(--cream);opacity:.85}
 .actbtn{position:absolute;z-index:3;right:max(18px,env(safe-area-inset-right,0px));bottom:22px;width:115px;height:115px;border-radius:50%;border:0;background:var(--banana);color:var(--leaf);font-family:var(--display);font-size:22px;box-shadow:0 5px 0 var(--ripe);display:none;touch-action:none}
 .actbtn.on{transform:translateY(3px);box-shadow:0 2px 0 var(--ripe)}
-@media (pointer:coarse){.joy,.actbtn{display:block}.power{bottom:154px}}
+@media (pointer:coarse){.joy,.actbtn{display:block}.power{bottom:214px}}
+@media (pointer:coarse) and (orientation:portrait){.joy{bottom:calc(120px + env(safe-area-inset-bottom,0px))}.actbtn{bottom:calc(120px + env(safe-area-inset-bottom,0px))}.power{bottom:270px}}
 .overlay{position:absolute;inset:0;display:flex;background:var(--veil);padding:16px;overflow:auto;z-index:5}
 .card{margin:auto;max-width:540px;width:100%;text-align:center;display:flex;flex-direction:column;gap:10px;align-items:center;background:rgba(9,22,12,.62);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border:1px solid rgba(246,241,216,.12);border-radius:20px;padding:22px 20px 16px;box-shadow:0 12px 40px rgba(0,0,0,.35)}
 .install{width:100%;display:flex;flex-direction:column;align-items:center;gap:6px;background:rgba(255,210,63,.1);border:1px solid rgba(255,210,63,.35);border-radius:14px;padding:12px 12px 10px}
@@ -308,7 +309,7 @@ const UP = [
   {id:'botina',  nome:'Botina de borracha',  desc:'Anda mais rápido e protege da picada de cobra.',       custos:[170, 440, 950], nv:[1, 2, 4], grupo:'colhedor'},
   {id:'jaca',    nome:'Jacá nas costas',     desc:'Carrega um cacho a mais por viagem.',         custos:[510, 1360], nv:[2, 5], grupo:'colhedor'},
   {id:'carreta', nome:'Carreta maior',       descs:['Carreta média: cabe 20 cachos.', 'Carreta grande, de dois eixos: cabe 30 cachos.', 'Carreta gigante: cabe 40 cachos.'], fim:'Carreta gigante: 40 cachos.', custos:[510, 1280, 2550], nv:[2, 4, 6], grupo:'fazenda'},
-  {id:'trator2', nome:'Segundo trator',     descs:['Um segundo trator, com tratorista (diária de R$ 70), que acompanha o Toninho: ele corta e já põe o cacho nessa carreta.'], fim:'Segundo trator trabalhando com o Toninho.', custos:[10200], nv:[10], grupo:'equipe', diaria:70, req:() => save.lv.ajudante >= 3},
+  {id:'trator2', nome:'Segundo trator',     descs:['Um segundo trator, com tratorista (diária de R$ 70), para o bananal maior. Acompanha você, ou o Toninho quando ele estiver contratado.'], fim:'Segundo trator trabalhando.', custos:[3400], nv:[4], grupo:'equipe', diaria:70, req:() => save.lv.terra >= 1},
   {id:'trator',  nome:'Trator turbinado',    descs:['Motor turbo: o trator anda 40% mais rápido.', 'Pesos na frente e tração: sai antes e descarrega em 1 segundo.', 'Cabine de vidro com giroflex: estaciona sempre pertinho de você.'], fim:'Trator no máximo.', custos:[600, 1360, 2890], nv:[3, 5, 7], grupo:'fazenda'},
   {id:'cafe',    nome:'Café reforçado',      desc:'+20 segundos de colheita por dia.',           custos:[260, 650, 1360], nv:[2, 4, 6], grupo:'colhedor'},
 ];
@@ -1849,6 +1850,11 @@ function driveRoute(dt, spd){
     const w = tractor.route[0], dx = w.x - tractor.x, dz = w.z - tractor.z, d = Math.hypot(dx, dz);
     if (d < .05){ tractor.route.shift(); continue; }
     const target = Math.atan2(-dz, dx);
+    { const ax = tractorAxisX(tractor.yaw), az = tractorAxisZ(tractor.yaw), HW = tractor.cartHalfW + .45;
+      const inFront = p => { const qx = p.x - tractor.x, qz = p.z - tractor.z, lx = qx*ax.x + qz*ax.z, lz = qx*az.x + qz*az.z; return lx > 1.4 && lx < 4.6 && Math.abs(lz) < HW; };
+      const pl = inFront(player.pos), other = !pl && (tractor.waitT || 0) < 3 && [...workers, ...helpers].some(o => inFront(o.pos));
+      if (pl || other){ tractor.waitT = (tractor.waitT || 0) + dt; if (pl && tractor.waitT > .8 && !tractor.honked){ tractor.honked = true; if (Math.hypot(player.pos.x - tractor.x, player.pos.z - tractor.z) < 30) honk(); } if (pl && tractor.waitT > 5 && (tractor.state === 'moving' || tractor.state === 'returning')) tractor.route.length = 0; return 0; }
+      tractor.waitT = 0; tractor.honked = false; }
     tractor.yaw = angLerp(tractor.yaw, target, Math.min(1, dt*5));
     const step = Math.min(d, spd*dt);
     tractor.x += dx/d*step; tractor.z += dz/d*step; moved += step;
@@ -3788,7 +3794,7 @@ function checkHarvestDone(dt){
 function checkMission(dt){
   checkHarvestDone(dt);
   const ms = game.mis;
-  if (ms && !ms.done){ ms.chk = (ms.chk || 0) + dt; if (ms.chk > .5){ ms.chk = 0; const left = trees.reduce((n, t) => n + (misNeeds(ms.m.task, t) ? (ms.m.task === 'desbrotar' ? ladX(t) : 1) : 0), 0); ms.goal = Math.max(ms.goal, ms.got + left); if (!left) finishMission(); } }
+  if (ms && !ms.done){ ms.chk = (ms.chk || 0) + dt; if (ms.chk > .5){ ms.chk = 0; const left = trees.reduce((n, t) => n + (misNeeds(ms.m.task, t) ? (ms.m.task === 'desbrotar' ? ladX(t) : 1) : 0), 0); ms.goal = ms.got + left; if (!left) finishMission(); } }
   if (game.autoEnd){ game.autoEnd -= dt; if (game.autoEnd <= 0){ game.autoEnd = 0; if (game.running && !SALE.on && !SALE.start()) endDay(); } }
 }
 function taskNeeded(task, t){
@@ -3798,6 +3804,15 @@ function taskNeeded(task, t){
   if (task === 'desumbigar') return !t.desu;
   if (task === 'banhar') return t.desu && !t.wash && !t.bag; // banhado ou ensacado não toma banho de novo
   return t.desu && !t.bag;
+}
+function walkStall(o, d, dt){
+  const key = o.goal.x*7.31 + o.goal.z;
+  if (o.stK !== key){ o.stK = key; o.stD = d; o.stT = 0; o.stAll = 0; }
+  if (d < o.stD - .08){ o.stD = d; o.stT = 0; } else { o.stT += dt; o.stAll += dt; }
+  if (o.stT > .6 && d < .95) return 'arrive';                       // alguém ou algo ocupa o ponto exato: trabalha dali mesmo
+  if (o.stAll > 9) return 'giveup';                                 // não tem jeito: larga e volta depois
+  if (o.stT > 1.2){ o.stT = 0; o.stD = d; const a = Math.atan2(o.goal.z - o.pos.z, o.goal.x - o.pos.x) + (Math.random() < .5 ? 1.4 : -1.4); o.pos.x += Math.cos(a)*.3; o.pos.z += Math.sin(a)*.3; } // contorna o obstáculo
+  return null;
 }
 function pushTrees(p, skip){
   for (const t of trees){
@@ -3875,7 +3890,7 @@ function updateWorkers(dt){
         if (w.idleT <= 0){
           let best = null, bd = 1e9;
           for (const t of trees){
-            if (t.claimedBy || charge.tree === t || !taskNeeded(w.d.task, t)) continue;
+            if (t.claimedBy || charge.tree === t || t.avoidT > now || !taskNeeded(w.d.task, t)) continue;
             const d = Math.hypot(t.x - w.pos.x, t.z - w.pos.z); if (d < bd){ bd = d; best = t; }
           }
           if (best){
@@ -3888,7 +3903,9 @@ function updateWorkers(dt){
       if (!w.target){ const rs = restTick(w, dt); if (rs && rs.moving) moving = true; w.restPose = rs && rs.pose || null; } else if (w.rest || w.noWork) restClear(w);
       if (w.state === 'walk' && w.target){
         const dx = w.goal.x - w.pos.x, dz = w.goal.z - w.pos.z, d = Math.hypot(dx, dz), sp = 2.8;
-        if (d < .15){ w.state = 'work'; w.t = w.d.time; }
+        const ws = d < .15 ? 'arrive' : walkStall(w, d, dt);
+        if (ws === 'arrive'){ w.state = 'work'; w.t = w.d.time; }
+        else if (ws === 'giveup'){ w.target.avoidT = now + 12; w.target.claimedBy = null; w.target = null; w.state = 'idle'; w.idleT = .5; }
         else {
           w.pos.x += dx/d*Math.min(d, sp*dt); w.pos.z += dz/d*Math.min(d, sp*dt);
           pushTrees(w.pos, w.target);
@@ -3901,13 +3918,14 @@ function updateWorkers(dt){
         if (w.d.task === 'banhar' && Math.random() < dt*25) spawnPart(M.mist, sprayGeo, new V3(t.x + rnd(-.3,.3), rnd(1.6, 2.2), t.z + rnd(-.3,.3)), new V3(rnd(-.4,.4), rnd(.2,.8), rnd(-.4,.4)), .6);
         if (w.t <= 0){
           const near = Math.hypot(t.x - player.pos.x, t.z - player.pos.z) < 14;
-          const misT = game.mis && !game.mis.done && game.mis.m.task, conta = !!misT && misNeeds(misT, t);
+          const misT = game.mis && !game.mis.done && game.mis.m.task, conta = !!misT && misNeeds(misT, t), lad0 = ladX(t);
           if (w.d.task === 'desumbigar'){ desumbigar(t); if (near) float('Desembigado! O umbigo caiu', new V3(t.x, 2.8, t.z), '#d58ae0'); }
           else if (w.d.task === 'manejo'){ const was = manejoLad(t), folha = manejoFolha(t); if (was) t.lad -= ladX(t); if (folha){ if (near) desfolhar(t); else { t.sig = false; t.dry = false; if (t.state === 'grown') t.maxHp = treeHp(t), t.hp = Math.min(t.hp, t.maxHp); refreshTreeLook(t); } } refreshTreeLook(t); if (near) float(was ? 'Desbastado' : 'Desfolhado', new V3(t.x, 2.4, t.z), '#c9e88a'); }
           else if (w.d.task === 'escorar'){ t.esc = true; refreshTreeLook(t); if (near) float('Escorada com bambu', new V3(t.x, 2.8, t.z), '#e7dc8a'); }
           else if (w.d.task === 'banhar'){ t.wash = true; refreshBunch(t); if (near) float('Banhado +20%', new V3(t.x, 2.8, t.z), '#bfe6ff'); }
           else { t.bag = true; refreshBunch(t); if (near) float('Ensacado +30%', new V3(t.x, 2.8, t.z), '#8fb4ff'); }
-          if (conta && !misNeeds(misT, t)) teamStep();
+          if (conta && misT === 'desbrotar') for (let k = ladX(t); k < lad0; k++) teamStep(); // cada ladrão cortado conta um
+          else if (conta && !misNeeds(misT, t)) teamStep();
           t.claimedBy = null; w.target = null; w.state = 'idle'; w.idleT = .3;
         }
       }
@@ -3970,6 +3988,9 @@ function releaseHelper(h){
 function stepTo(h, sp, dt){
   const dx = h.goal.x - h.pos.x, dz = h.goal.z - h.pos.z, d = Math.hypot(dx, dz);
   if (d < .15) return true;
+  const ws = walkStall(h, d, dt);
+  if (ws === 'arrive') return true;
+  if (ws === 'giveup' && h.state !== 'carry'){ const o = h.target || h.bunch; if (o) o.avoidT = now + 12; releaseHelper(h); return false; }
   h.pos.x += dx/d*Math.min(d, sp*dt); h.pos.z += dz/d*Math.min(d, sp*dt);
   pushTrees(h.pos, h.target);
   h.yaw = angLerp(h.yaw, Math.atan2(dx, dz), Math.min(1, dt*10)); h.walk += dt*sp*2.2; h.moving = true;
@@ -4014,7 +4035,7 @@ function updateHelpers(dt){
           const pilha = ground_bunches.length > 6;
           let bb = null, bs = 1e9, bd = h.d.cut ? (pilha ? 120 : (helpers.some(x => !x.d.cut) && !tractor2) ? 0 : 8) : 120;
           for (const b of ground_bunches){
-            if (b.claimedBy || b.swarm || Math.hypot(b.x - player.pos.x, b.z - player.pos.z) < 2.5) continue;
+            if (b.claimedBy || b.swarm || b.avoidT > now || Math.hypot(b.x - player.pos.x, b.z - player.pos.z) < 2.5) continue;
             const d = Math.hypot(b.x - h.pos.x, b.z - h.pos.z); if (d > bd) continue;
             // prefere o cacho que vale mais (gordo, ensacado, banhado), sem ignorar a distância
             const sc = d - bunchValue(b)/8; if (sc < bs){ bs = sc; bb = b; }
@@ -4025,7 +4046,7 @@ function updateHelpers(dt){
           else {
             let best = null, bs = 1e9;
             for (const t of trees){
-              if (t.state !== 'grown' || t.q === 'umbigo' || t.claimedBy || charge.tree === t) continue;
+              if (t.state !== 'grown' || t.q === 'umbigo' || t.claimedBy || charge.tree === t || t.avoidT > now) continue;
               const d = Math.hypot(t.x - h.pos.x, t.z - h.pos.z);
               const sc = d - (t.bag ? 8 : t.wash ? 3 : 0) - (t.q === 'gordo' ? 4 : 0) + (t.q === 'magro' ? 4 : 0);
               if (sc < bs){ bs = sc; best = t; }
@@ -4493,7 +4514,7 @@ function update(dt){
 
   if (charge.active){
     charge.t += dt;
-    const ph = (charge.t*(1.05 + .04*save.day)*2) % 2;
+    const ph = (charge.t*Math.min(.6 + .015*save.day, .95)*2) % 2; // ida e volta entre 0,8 s (começo) e 0,5 s (no máximo)
     charge.v = 1 - Math.abs(ph - 1);
     $('pneedle').style.left = (charge.v*100) + '%';
   }
