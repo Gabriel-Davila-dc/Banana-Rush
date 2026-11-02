@@ -3832,8 +3832,9 @@ function restClear(o){ if (o.rest) REST_CLAIM.delete(o.rest.key); o.rest = null;
 // pose depois do walkPose: sentado (coxas para frente, canelas para baixo) ou escorado (ombros para trás, perna cruzada)
 function restPose(R, type){
   const br = Math.sin(now*1.3 + (R.seed || 0))*.02;
-  if (type === 'sit'){
-    R.legL.rotation.x = -1.48; R.legR.rotation.x = -1.38; R.kneeL.rotation.x = 1.42; R.kneeR.rotation.x = 1.25;
+  if (type === 'sit' || type === 'stool'){
+    if (type === 'stool'){ R.legL.rotation.x = -1.3; R.legR.rotation.x = -1.24; R.kneeL.rotation.x = 1.3; R.kneeR.rotation.x = 1.18; } // banquinho baixo: coxa quase reta, pé no chão
+    else { R.legL.rotation.x = -1.48; R.legR.rotation.x = -1.38; R.kneeL.rotation.x = 1.42; R.kneeR.rotation.x = 1.25; }
     R.legL.rotation.z = .1; R.legR.rotation.z = -.14; if (R.ankleL){ R.ankleL.rotation.x = 0; R.ankleR.rotation.x = .1; }
     if (R.U){ R.U.rotation.x = .16 + br; R.U.rotation.y = 0; R.U.rotation.z = 0; }
     R.armL.rotation.x = -.62; R.armL.rotation.z = .18; if (R.elbowL) R.elbowL.rotation.x = -.7;
@@ -3845,7 +3846,7 @@ function restPose(R, type){
     if (R.piv){ R.piv.rotation.x = .2; R.piv.rotation.y = -.25; }
   }
 }
-const SIT_DROP = .03;
+const SIT_DROP = .03, STOOL_DROP = .32; // banquinho de 47 cm: o quadril desce até o assento
 // ninguém atravessa ninguém: pessoas que encostam são empurradas para os lados (quem está parado no posto não sai do lugar)
 function separatePeople(){
   const list = [{p:player.pos, w:1}];
@@ -5737,11 +5738,11 @@ function floorAt(x, z){ const h = heightAt(x, z); return x > SHED_FLOOR.x0 && x 
   const stool = (x, z) => { const g = new THREE.Group(), wm = L('#8a6440', {roughness:.85}); const top = new THREE.Mesh(new THREE.CylinderGeometry(.19, .19, .05, 14), wm); top.position.y = .45; g.add(top);
     for (let k=0;k<3;k++){ const a = k*2.09, lg = new THREE.Mesh(new THREE.CylinderGeometry(.02, .026, .46, 6), wm); lg.position.set(Math.cos(a)*.12, .22, Math.sin(a)*.12); lg.rotation.set(Math.sin(a)*.14, 0, -Math.cos(a)*.14); g.add(lg); }
     g.position.set(x, FY, z); g.traverse(o => { if (o.isMesh){ o.castShadow = o.receiveShadow = true; } }); scene.add(g); SALE.circles.push([x, z, .2]); };
-  const SPOTS = {desp:{type:'sit', x:78.2, z:2.9, yaw:Math.PI/2}, pack:{type:'lean', x:84, z:6.62, yaw:Math.PI}, cars:[{type:'sit', x:90.15, z:2.2, yaw:-Math.PI/2}, {type:'sit', x:90.75, z:2.85, yaw:-Math.PI/2}]};
+  const SPOTS = {desp:{type:'stool', x:78.2, z:2.9, yaw:Math.PI/2}, pack:{type:'lean', x:84, z:6.62, yaw:Math.PI}, cars:[{type:'stool', x:90.15, z:2.2, yaw:-Math.PI/2}, {type:'stool', x:90.75, z:2.85, yaw:-Math.PI/2}]};
   stool(SPOTS.desp.x, SPOTS.desp.z); for (const c of SPOTS.cars) stool(c.x, c.z);
   const npcGo = (R, x, z, dt, sp = 1.4) => { const p = R.g.position, dx = x - p.x, dz = z - p.z, d = Math.hypot(dx, dz); if (d < .08){ p.x = x; p.z = z; p.y = floorAt(x, z); return true; }
     const st = Math.min(d, sp*dt); p.x += dx/d*st; p.z += dz/d*st; p.y = floorAt(p.x, p.z); R.g.rotation.y = angLerp(R.g.rotation.y, Math.atan2(dx, dz), Math.min(1, dt*8)); R.g.userData.walk = (R.g.userData.walk || 0) + dt*7; walkPose(R, Math.sin(R.g.userData.walk), {moving:true, walk:R.g.userData.walk}); return false; };
-  const npcRest = (R, S, dt) => { if (!npcGo(R, S.x, S.z, dt)) return; R.g.rotation.y = angLerp(R.g.rotation.y, S.yaw, Math.min(1, dt*5)); walkPose(R, 0, {}); restPose(R, S.type); R.g.position.y = floorAt(S.x, S.z) - (S.type === 'sit' ? SIT_DROP : 0); };
+  const npcRest = (R, S, dt) => { if (!npcGo(R, S.x, S.z, dt)) return; R.g.rotation.y = angLerp(R.g.rotation.y, S.yaw, Math.min(1, dt*5)); walkPose(R, 0, {}); restPose(R, S.type); R.g.position.y = floorAt(S.x, S.z) - (S.type === 'stool' ? STOOL_DROP : 0); };
 
   SALE.start = () => {
     if (game.mis) return false;
