@@ -3161,7 +3161,13 @@ if (Array.isArray(save.field) && save.field.length === trees.length){
 
 /* ---------- detalhes do cenário ---------- */
 // plataforma de carga na altura da carroceria do caminhão, com escada na ponta oeste
-var DOCK_Y = heightAt(92.55, 3.6) + 1.06, DOCK_STEPS = (() => { const x0 = 75.45, x1 = 76.75, y0 = heightAt(75.45, 6.6), R = DOCK_Y - y0, n = Math.max(2, Math.ceil(R/.2)); return {x0, x1, z0:5.95, z1:7.2, y0, n, rise:R/n, run:(x1 - x0)/n}; })();
+var DOCK_Y = heightAt(92.55, 3.6) + 1.06;
+// escada: ax = eixo da subida, s = sentido (+1 sobe indo para + do eixo); a = início e b = fim no eixo da subida; c0/c1 = largura no outro eixo
+const mkStair = (ax, s, a, b, c0, c1) => { const fx = ax === 'x' ? (s > 0 ? a : b) : (c0 + c1)/2, fz = ax === 'z' ? (s > 0 ? a : b) : (c0 + c1)/2, y0 = heightAt(fx, fz), R = DOCK_Y - y0, n = Math.max(2, Math.ceil(R/.19));
+  return {ax, s, a, b, c0, c1, y0, n, rise:R/n, run:(b - a)/n}; };
+var STAIRS = [mkStair('x', 1, 75.45, 76.75, 5.95, 7.2), mkStair('z', -1, 7.3, 8.75, 88.4, 90.9)];
+const stairT = (S, x, z) => { const u = S.ax === 'x' ? x : z; return S.s > 0 ? u - S.a : S.b - u; }; // distância andada desde o pé da escada
+const stairAt = (x, z) => STAIRS.find(S => { const u = S.ax === 'x' ? x : z, c = S.ax === 'x' ? z : x; return u >= S.a - .05 && u <= S.b + .05 && c > S.c0 && c < S.c1; });
 (() => {
   buildTractorDetails(plaidMat('#b8322a', 'rgba(255,230,160,.55)'), {mustache:false, hair:L('#f0c95a'), skin:'#f0c4a0', pants:L('#3d5a85', {map:denimTex}), driverCap:'#2f7d3a', brim:'#1f5a2a'});
   // cerca de arame farpado com mourões roliços de eucalipto
@@ -3215,8 +3221,17 @@ var DOCK_Y = heightAt(92.55, 3.6) + 1.06, DOCK_STEPS = (() => { const x0 = 75.45
   const sAdd = (geo, mat, x, y, z) => { const mm = new THREE.Mesh(geo, mat); mm.position.set(x, y, z); mm.castShadow = mm.receiveShadow = true; shed.add(mm); return mm; };
   { const H = DOCK_Y + .8; sAdd(new THREE.BoxGeometry(SW + .6, H, SD + .6), conc, 0, .3 - H/2, 0); } // plataforma de concreto maciça até o chão
   // escada de concreto na ponta oeste da frente, para subir na plataforma
-  { const n = DOCK_STEPS.n; for (let i=0;i<n;i++){ const top = DOCK_STEPS.y0 + (i + 1)*DOCK_STEPS.rise - DUP, x0 = DOCK_STEPS.x0 + i*DOCK_STEPS.run - 84, w = DOCK_STEPS.x1 - DOCK_STEPS.x0 - i*DOCK_STEPS.run, H = top + DUP + .5;
-    sAdd(new THREE.BoxGeometry(w, H, DOCK_STEPS.z1 - DOCK_STEPS.z0), conc, x0 + w/2, top - H/2, (DOCK_STEPS.z0 + DOCK_STEPS.z1)/2 - 3); } }
+  for (const S of STAIRS) for (let i=0;i<S.n;i++){
+    const top = S.y0 + (i + 1)*S.rise - DUP, H = top + DUP + .5, len = (S.b - S.a) - i*S.run, mid = S.s > 0 ? S.a + i*S.run + len/2 : S.b - i*S.run - len/2, cw = S.c1 - S.c0, cm = (S.c0 + S.c1)/2;
+    if (S.ax === 'x') sAdd(new THREE.BoxGeometry(len, H, cw), conc, mid - 84, top - H/2, cm - 3); else sAdd(new THREE.BoxGeometry(cw, H, len), conc, cm - 84, top - H/2, mid - 3);
+    if (i === S.n - 1) for (const k of [S.c0 + .05, S.c1 - .05]){ // corrimão de cano
+      const L = S.b - S.a, dy = S.n*S.rise, ang = Math.atan2(dy, L), rail = new THREE.Mesh(new THREE.CylinderGeometry(.025, .025, Math.hypot(L, dy), 6), steel); rail.castShadow = true;
+      const cx = S.ax === 'x' ? (S.a + S.b)/2 : k, cz = S.ax === 'z' ? (S.a + S.b)/2 : k; rail.position.set(cx - 84, S.y0 + dy/2 + .85 - DUP, cz - 3);
+      if (S.ax === 'x') rail.rotation.z = Math.PI/2 - ang*S.s; else rail.rotation.x = -(Math.PI/2 - ang*S.s);
+      shed.add(rail);
+      for (const e of [S.a + .05, S.b - .05]){ const yy = S.y0 + (S.s > 0 ? (e - S.a) : (S.b - e))/L*dy, post = new THREE.Mesh(new THREE.BoxGeometry(.04, .9, .04), steel); post.position.set((S.ax === 'x' ? e : k) - 84, yy + .45 - DUP, (S.ax === 'z' ? e : k) - 3); shed.add(post); }
+    }
+  }
   for (const x of [-7, -3.5, 0, 3.5, 7]) for (const z of [-4, 4]) sAdd(new THREE.BoxGeometry(.25, 4.3, .25), conc, x, 2.45, z);
   for (const z of [-4, 4]) sAdd(new THREE.BoxGeometry(SW + .25, .3, .22), conc, 0, 4.5, z);
   // tesouras de metal
@@ -3269,7 +3284,7 @@ var DOCK_Y = heightAt(92.55, 3.6) + 1.06, DOCK_STEPS = (() => { const x0 = 75.45
   sAdd(new THREE.BoxGeometry(.5, .08, .5), steel, 1.9, .34, 2.4); sAdd(new THREE.BoxGeometry(.08, .9, .08), steel, 1.9, .79, 2.15); sAdd(new THREE.BoxGeometry(.3, .25, .12), L('#d8d8d0'), 1.9, 1.3, 2.15);
   const signT = tex(256, 64, g => { g.fillStyle = '#2f5d2a'; g.fillRect(0, 0, 256, 64); g.fillStyle = '#f2e6c0'; g.font = 'bold 30px Arial Black, sans-serif'; g.textAlign = 'center'; g.fillText('EMBALAGEM', 128, 43); });
   const sign = new THREE.Mesh(new THREE.PlaneGeometry(3.4, .8), L('#ffffff', {map:signT})); sign.position.set(0, 4.5, 4.13); shed.add(sign);
-  shed.position.set(84, 0, 3); scene.add(shed);
+  shed.position.set(84, DUP, 3); scene.add(shed);
   // o galpão é todo parado: junta as peças por material
   {
     shed.updateMatrixWorld(true); const inv = shed.matrixWorld.clone().invert(), by = new Map(), olds = [];
@@ -4450,9 +4465,14 @@ function pushOut(p){
     if (!ok(p.x, p.z)){ if (ok(L0.x, p.z)) p.x = L0.x; else if (ok(p.x, L0.z)) p.z = L0.z; else { p.x = clamp(L0.x, xl, 104); p.z = Math.max(L0.z, zb); } }
     if (p.x > 70){
       saleSolids(p);
-      const up = (x, z) => inDock(x, z) || onSteps(x, z) && x > DOCK_STEPS.x0 + DOCK_STEPS.run*.5;
-      if (up(p.x, p.z) !== up(L0.x, L0.z) && !onSteps(p.x, p.z) && !onSteps(L0.x, L0.z)){ if (up(L0.x, p.z) === up(L0.x, L0.z)) p.x = L0.x; else if (up(p.x, L0.z) === up(L0.x, L0.z)) p.z = L0.z; else { p.x = L0.x; p.z = L0.z; } }
-      if (onSteps(p.x, p.z) || onSteps(L0.x, L0.z)){ p.z = clamp(p.z, DOCK_STEPS.z0 + .2, DOCK_STEPS.z1 - .2); } // na escada só anda para cima e para baixo
+      // só sobe e desce da plataforma pela escada
+      const up = (x, z) => inDock(x, z), sp = stairAt(p.x, p.z), sl = stairAt(L0.x, L0.z);
+      if (up(p.x, p.z) !== up(L0.x, L0.z) && !sp && !sl){
+        if (up(L0.x, p.z) === up(L0.x, L0.z)) p.x = L0.x; else if (up(p.x, L0.z) === up(L0.x, L0.z)) p.z = L0.z; else { p.x = L0.x; p.z = L0.z; }
+        if (!up(L0.x, L0.z) && !(pushOut.hintT > now)){ pushOut.hintT = now + 6; float('Suba pela escada', new V3(p.x, 2.2, p.z), '#fff6c8'); }
+      }
+      const S = sp || sl; // na escada não sai pelos lados
+      if (S){ if (S.ax === 'x') p.z = clamp(p.z, S.c0 + .2, S.c1 - .2); else p.x = clamp(p.x, S.c0 + .2, S.c1 - .2); }
     }
     if (ok(p.x, p.z)){ L0.x = p.x; L0.z = p.z; }
   } else {
@@ -5697,11 +5717,10 @@ function farmSolids(p){
 var SALE = {on:false, queue:[], pile:[], pencas:[], fill:0, ready:0, onTruck:0, boxes:[], circles:[], leaving:0};
 const SHED_FLOOR = {x0:76.7, x1:91.3, z0:-1.3, z1:7.3, y:DOCK_Y};
 const inDock = (x, z) => x > SHED_FLOOR.x0 && x < SHED_FLOOR.x1 && z > SHED_FLOOR.z0 && z < SHED_FLOOR.z1;
-const onSteps = (x, z) => x >= DOCK_STEPS.x0 - .05 && x <= DOCK_STEPS.x1 + .05 && z > DOCK_STEPS.z0 && z < DOCK_STEPS.z1;
 function floorAt(x, z){
   const h = heightAt(x, z);
   if (inDock(x, z)) return Math.max(h, SHED_FLOOR.y);
-  if (onSteps(x, z)){ const i = Math.floor((x - DOCK_STEPS.x0)/DOCK_STEPS.run); return Math.max(h, DOCK_STEPS.y0 + clamp(i + 1, 0, DOCK_STEPS.n)*DOCK_STEPS.rise); }
+  const S = stairAt(x, z); if (S){ const i = Math.floor(stairT(S, x, z)/S.run); return Math.max(h, S.y0 + clamp(i + 1, 0, S.n)*S.rise); }
   if (SALE.bedOn && x >= 91.3 && x < 93.5 && z > .8 && z < 5.2) return Math.max(h, SHED_FLOOR.y); // carroceria do caminhão, na mesma altura
   return h;
 }
@@ -5711,7 +5730,7 @@ function floorAt(x, z){
   const K = M.crateKit;
   const solid = (x0, x1, z0, z1) => SALE.boxes.push([x0, x1, z0, z1]);
   // paredes baixas, tanque, mesa, caixas e colunas do galpão
-  solid(76.8, 91.3, -1.2, -.75); solid(76.8, 77.25, -1.3, 7.3);
+  solid(76.8, 91.3, -1.2, -.75); solid(76.8, 77.25, -1.3, 5.6); // a mureta oeste para antes da escada
   solid(79.75, 84.65, .75, 2.45); solid(87, 89.4, 3.65, 4.75); solid(86.9, 89.4, -.15, 1.2); solid(78.1, 79.9, 5.4, 5.85);
   solid(84.9, 86.5, 2.45, 2.95);
   // cavalete baixo ao lado do tanque, onde a caixa é enchida
@@ -5839,7 +5858,7 @@ function floorAt(x, z){
     if (!total) return false;
     SALE.on = true; SALE.refreshPile();
     // estaciona rente ao galpão, com a carreta na frente do tanque
-    withTractor(mainT, () => { tractor.route = routeTo(DEPOT, false); tractor.route.push({x:83, z:8.7}, {x:87.6, z:8.7}); tractor.state = 'saleGo'; tractor.wantT = 0; });
+    withTractor(mainT, () => { tractor.route = routeTo(DEPOT, false); tractor.route.push({x:81.5, z:8.7}, {x:86, z:8.7}); tractor.state = 'saleGo'; tractor.wantT = 0; });
     toast('Hora de vender! O trator leva a carreta até o galpão (fim da estrada, à direita). Quando ela parar lá, ponha os cachos no tanque d’água.');
     sfx(523, 784, .3, 'triangle', .08);
     return true;
