@@ -1331,7 +1331,7 @@ function addMuds(rect, n){
     const r = rnd(.8, 1.2), m = new THREE.Mesh(pick(ROCK_GEOS), ROCK_MAT);
     m.scale.set(r*rnd(1.05, 1.35), r*rnd(.85, 1.1), r*rnd(.9, 1.15)); m.rotation.y = rnd(0, 6.3);
     m.position.set(x, heightAt(x, z) - r*.12, z); m.castShadow = m.receiveShadow = true; scene.add(m);
-    ROCKS.push({x, z, r:Math.max(m.scale.x, m.scale.z)*.9});
+    ROCKS.push({x, z, r:Math.max(m.scale.x, m.scale.z)*.9, m});
   }
 }
 const inMud = p => muds.some(m => Math.hypot(p.x - m.x, p.z - m.z) < m.r);
@@ -2812,7 +2812,7 @@ function syncCarry(){
   player.carryMeshes.forEach((h, i) => {
     while (h.children.length) h.remove(h.children[0]);
     const c = player.carry[i]; h.visible = !!c;
-    if (c){ const b = makeBunch(c.q, c.bruised, c); b.rotation.z = Math.PI/2; b.position.x = .3; b.traverse(o => { if (o.isMesh) o.castShadow = true; }); h.add(b); }
+    if (c){ const b = makeBunch(c.q, c.bruised, c); b.rotation.x = 1.3; b.position.set(0, .02, .02); /* deitado nas costas, engaço para a frente por cima do ombro */ b.traverse(o => { if (o.isMesh) o.castShadow = true; }); h.add(b); }
   });
 }
 
@@ -3160,6 +3160,8 @@ if (Array.isArray(save.field) && save.field.length === trees.length){
 }
 
 /* ---------- detalhes do cenário ---------- */
+// plataforma de carga na altura da carroceria do caminhão, com escada na ponta oeste
+var DOCK_Y = heightAt(92.55, 3.6) + 1.06, DOCK_STEPS = (() => { const x0 = 75.45, x1 = 76.75, y0 = heightAt(75.45, 6.6), R = DOCK_Y - y0, n = Math.max(2, Math.ceil(R/.2)); return {x0, x1, z0:5.95, z1:7.2, y0, n, rise:R/n, run:(x1 - x0)/n}; })();
 (() => {
   buildTractorDetails(plaidMat('#b8322a', 'rgba(255,230,160,.55)'), {mustache:false, hair:L('#f0c95a'), skin:'#f0c4a0', pants:L('#3d5a85', {map:denimTex}), driverCap:'#2f7d3a', brim:'#1f5a2a'});
   // cerca de arame farpado com mourões roliços de eucalipto
@@ -3189,8 +3191,10 @@ if (Array.isArray(save.field) && save.field.length === trees.length){
   }
   const wg = new THREE.BufferGeometry(); wg.setAttribute('position', new THREE.Float32BufferAttribute(wp, 3));
   scene.add(new THREE.LineSegments(wg, new THREE.LineBasicMaterial({color:C('#4d5052')})));
+  // plataforma de carga na altura da carroceria do caminhão, com escada na ponta oeste
   // galpão de embalagem aberto, onde o trator descarrega: piso e colunas de concreto, telha ondulada, mureta de tijolo, tanques e caixas
-  const shed = new THREE.Group(), SW = 14, SD = 8;
+  const shed = new THREE.Group(), SW = 14, SD = 8, DUP = DOCK_Y - .3;
+  shed.position.y = DUP;
   const concTex = tex(256, 256, (g, w, h) => {
     g.fillStyle = '#a9a69d'; g.fillRect(0, 0, w, h);
     for (let i=0;i<500;i++){ g.fillStyle = pick(['rgba(80,78,70,.12)','rgba(200,198,190,.12)','rgba(110,100,80,.1)']); g.beginPath(); g.arc(rnd(0, w), rnd(0, h), rnd(2, 20), 0, 7); g.fill(); }
@@ -3209,7 +3213,10 @@ if (Array.isArray(save.field) && save.field.length === trees.length){
   const conc = M.conc = L('#ffffff', {map:concTex, roughness:.92}), brick = L('#ffffff', {map:brickTex, roughness:.9});
   const roofM = L('#ffffff', {map:roofTex, roughness:.85, side:THREE.DoubleSide}), steel = L('#5d6266', {roughness:.5, metalness:.5});
   const sAdd = (geo, mat, x, y, z) => { const mm = new THREE.Mesh(geo, mat); mm.position.set(x, y, z); mm.castShadow = mm.receiveShadow = true; shed.add(mm); return mm; };
-  sAdd(new THREE.BoxGeometry(SW + .6, .3, SD + .6), conc, 0, .15, 0);
+  { const H = DOCK_Y + .8; sAdd(new THREE.BoxGeometry(SW + .6, H, SD + .6), conc, 0, .3 - H/2, 0); } // plataforma de concreto maciça até o chão
+  // escada de concreto na ponta oeste da frente, para subir na plataforma
+  { const n = DOCK_STEPS.n; for (let i=0;i<n;i++){ const top = DOCK_STEPS.y0 + (i + 1)*DOCK_STEPS.rise - DUP, x0 = DOCK_STEPS.x0 + i*DOCK_STEPS.run - 84, w = DOCK_STEPS.x1 - DOCK_STEPS.x0 - i*DOCK_STEPS.run, H = top + DUP + .5;
+    sAdd(new THREE.BoxGeometry(w, H, DOCK_STEPS.z1 - DOCK_STEPS.z0), conc, x0 + w/2, top - H/2, (DOCK_STEPS.z0 + DOCK_STEPS.z1)/2 - 3); } }
   for (const x of [-7, -3.5, 0, 3.5, 7]) for (const z of [-4, 4]) sAdd(new THREE.BoxGeometry(.25, 4.3, .25), conc, x, 2.45, z);
   for (const z of [-4, 4]) sAdd(new THREE.BoxGeometry(SW + .25, .3, .22), conc, 0, 4.5, z);
   // tesouras de metal
@@ -3228,7 +3235,7 @@ if (Array.isArray(save.field) && save.field.length === trees.length){
   sAdd(new THREE.BoxGeometry(SW + 1.4, .08, .35), roofM, 0, 5.82, 0);
   // mureta de tijolo no fundo e na lateral, com reboco por cima
   sAdd(new THREE.BoxGeometry(SW, 1.1, .2), brick, 0, .85, -3.95);
-  sAdd(new THREE.BoxGeometry(.2, 1.1, SD), brick, -6.95, .85, 0);
+  sAdd(new THREE.BoxGeometry(.2, 1.1, 6.6), brick, -6.95, .85, -.7); // vão no fim da mureta: chegada da escada
   sAdd(new THREE.BoxGeometry(SW, .06, .26), conc, 0, 1.42, -3.95);
   // um tanque só, comprido, com água: o cacho é despencado dentro dele e as pencas ficam boiando
   const water = new THREE.MeshStandardMaterial({color:C('#5f8f8a'), roughness:.08, metalness:.1, transparent:true, opacity:.85});
@@ -3254,7 +3261,7 @@ if (Array.isArray(save.field) && save.field.length === trees.length){
   // pilhas de caixas plásticas vazias no fundo e na lateral
   { const K = M.crateKit;
     for (let sx=0;sx<4;sx++) for (let sz=0;sz<3;sz++){ const hgt = 3 + (Math.random()*4|0), m = K.mats[(sx + sz)%4]; for (let k=0;k<hgt;k++){ const b = sAdd(K.geo, m, 3.2 + sx*.6, .3 + k*.29, -2.8 + sz*.42); b.rotation.y = rnd(-.05, .05); } }
-    for (let sx=0;sx<3;sx++) for (let k=0;k<(2 + (Math.random()*3|0));k++){ const c = sAdd(K.geo, K.mats[0], -5.6 + sx*.6, .3 + k*.29, 2.6); c.rotation.y = rnd(-.06, .06); }
+    for (let sx=0;sx<3;sx++) for (let k=0;k<(2 + (Math.random()*3|0));k++){ const c = sAdd(K.geo, K.mats[0], -5.0 + sx*.6, .3 + k*.29, 1.9); c.rotation.y = rnd(-.06, .06); }
   }
   // mesa de despencar e balança
   sAdd(new THREE.BoxGeometry(2.4, .08, 1), L('#8a8f92', {roughness:.4, metalness:.6}), 4.2, .95, 1.2);
@@ -3823,16 +3830,34 @@ function pushTrees(p, skip){
 }
 /* ---------- descanso: sem serviço, a pessoa senta numa pedra ou se escora num tronco ---------- */
 const REST_CLAIM = new Set();
+const _rc = new THREE.Raycaster(), _rcO = new THREE.Vector3(), _rcD = new THREE.Vector3(0, -1, 0);
+function rockSeat(k, nx, nz){
+  if (!k.m) return null; k.m.updateMatrixWorld();
+  for (let d = k.r*1.25; d > .15; d -= .04){
+    const x = k.x + nx*d, z = k.z + nz*d; _rcO.set(x, 6, z); _rc.set(_rcO, _rcD);
+    const hit = _rc.intersectObject(k.m, false)[0]; if (!hit) continue;
+    const h = hit.point.y - heightAt(x, z);
+    if (h >= .42) return h > .62 ? null : {x, z, h};
+  }
+  return null;
+}
+const STAND_HIP = .86;
 function restSpotFor(o){
   const p = o.pos; let best = null, bd = 26;
   for (const k of ROCKS){ if (REST_CLAIM.has(k)) continue; const d = Math.hypot(k.x - p.x, k.z - p.z); if (d < bd){ bd = d; best = k; } }
-  if (best){ const dx = p.x - best.x, dz = p.z - best.z, d = Math.hypot(dx, dz) || 1, r = best.r*.92 + .1;
-    return {key:best, type:'sit', x:best.x + dx/d*r, z:best.z + dz/d*r, yaw:Math.atan2(dx, dz)}; }
+  if (best){ const dx = p.x - best.x, dz = p.z - best.z, d = Math.hypot(dx, dz) || 1;
+    // tenta o lado de quem chega e, se ali a pedra for alta ou baixa demais, gira em volta dela
+    for (let k = 0; k < 8; k++){ const a = Math.atan2(dz, dx) + (k & 1 ? 1 : -1)*Math.ceil(k/2)*.6, nx = Math.cos(a), nz = Math.sin(a), st = rockSeat(best, nx, nz);
+      if (st) return {key:best, type:'stool', drop:STAND_HIP - (st.h + .06), x:st.x, z:st.z, yaw:Math.atan2(nx, nz)}; }
+  }
   bd = 18; let tb = null;
   for (const t of trees){ if (t.state !== 'grown' || REST_CLAIM.has(t) || t.claimedBy) continue; const d = Math.hypot(t.x - p.x, t.z - p.z); if (d < bd){ bd = d; tb = t; } }
   if (tb){ const dx = p.x - tb.x, dz = p.z - tb.z, d = Math.hypot(dx, dz) || 1;
-    return {key:tb, type:'lean', x:tb.x + dx/d*.42, z:tb.z + dz/d*.42, yaw:Math.atan2(dx, dz)}; }
-  return null;
+    // ou se escora em pé no tronco, ou senta no chão com as costas no tronco
+    if (Math.random() < .5) return {key:tb, type:'lean', x:tb.x + dx/d*.42, z:tb.z + dz/d*.42, yaw:Math.atan2(dx, dz)};
+    return {key:tb, type:'ground', drop:GROUND_DROP, x:tb.x + dx/d*.5, z:tb.z + dz/d*.5, yaw:Math.atan2(dx, dz)}; }
+  // sem pedra nem bananeira por perto: senta no chão ali mesmo
+  return {key:o, type:'ground', drop:GROUND_DROP, x:p.x, z:p.z, yaw:o.yaw || 0};
 }
 function restTick(o, dt){
   o.noWork = (o.noWork || 0) + dt;
@@ -3845,10 +3870,20 @@ function restTick(o, dt){
 }
 function restClear(o){ if (o.rest) REST_CLAIM.delete(o.rest.key); o.rest = null; o.noWork = 0; o.restPose = null; }
 // pose depois do walkPose: sentado (coxas para frente, canelas para baixo) ou escorado (ombros para trás, perna cruzada)
+const GROUND_DROP = .72;
 function restPose(R, type){
   const br = Math.sin(now*1.3 + (R.seed || 0))*.02;
-  if (type === 'sit' || type === 'stool'){
-    if (type === 'stool'){ R.legL.rotation.x = -1.3; R.legR.rotation.x = -1.24; R.kneeL.rotation.x = 1.3; R.kneeR.rotation.x = 1.18; } // banquinho baixo: coxa quase reta, pé no chão
+  if (type === 'ground'){
+    R.legL.rotation.x = -2.05; R.legR.rotation.x = -1.95; R.kneeL.rotation.x = 2.2; R.kneeR.rotation.x = 2.0;
+    R.legL.rotation.z = .16; R.legR.rotation.z = -.2; if (R.ankleL){ R.ankleL.rotation.x = -.3; R.ankleR.rotation.x = -.1; }
+    if (R.U){ R.U.rotation.x = -.12 + br; R.U.rotation.y = 0; R.U.rotation.z = 0; }
+    R.armL.rotation.x = -.9; R.armL.rotation.z = .25; if (R.elbowL) R.elbowL.rotation.x = -.9;
+    if (R.piv){ R.piv.rotation.x = .9; R.piv.rotation.y = .2; }
+    return;
+  }
+  if (type === 'sit' || type === 'stool' || type === 'crate'){
+    if (type === 'crate'){ R.legL.rotation.x = -1.18; R.legR.rotation.x = -1.1; R.kneeL.rotation.x = 1.0; R.kneeR.rotation.x = .86; }
+    else if (type === 'stool'){ R.legL.rotation.x = -1.3; R.legR.rotation.x = -1.24; R.kneeL.rotation.x = 1.3; R.kneeR.rotation.x = 1.18; } // banquinho baixo: coxa quase reta, pé no chão
     else { R.legL.rotation.x = -1.48; R.legR.rotation.x = -1.38; R.kneeL.rotation.x = 1.42; R.kneeR.rotation.x = 1.25; }
     R.legL.rotation.z = .1; R.legR.rotation.z = -.14; if (R.ankleL){ R.ankleL.rotation.x = 0; R.ankleR.rotation.x = .1; }
     if (R.U){ R.U.rotation.x = .16 + br; R.U.rotation.y = 0; R.U.rotation.z = 0; }
@@ -3861,7 +3896,7 @@ function restPose(R, type){
     if (R.piv){ R.piv.rotation.x = .2; R.piv.rotation.y = -.25; }
   }
 }
-const SIT_DROP = .03, STOOL_DROP = .32; // banquinho de 47 cm: o quadril desce até o assento
+const SIT_DROP = .03, STOOL_DROP = .32, CRATE_DROP = .2; // duas caixas plásticas: assento a 60 cm // banquinho de 47 cm: o quadril desce até o assento
 // ninguém atravessa ninguém: pessoas que encostam são empurradas para os lados (quem está parado no posto não sai do lugar)
 function separatePeople(){
   const list = [{p:player.pos, w:1}];
@@ -3930,7 +3965,7 @@ function updateWorkers(dt){
         }
       }
     }
-    b.g.position.set(w.pos.x, heightAt(w.pos.x, w.pos.z) + (moving ? Math.abs(Math.cos(w.walk))*.05 : 0) - (w.restPose === 'sit' ? SIT_DROP : 0), w.pos.z); b.g.rotation.y = w.yaw;
+    b.g.position.set(w.pos.x, heightAt(w.pos.x, w.pos.z) + (moving ? Math.abs(Math.cos(w.walk))*.05 : 0) - (w.restPose && w.rest ? w.rest.drop || 0 : 0), w.pos.z); b.g.rotation.y = w.yaw;
     b.g.rotation.z = w.stunT > 0 ? Math.sin(now*12)*.18 : 0;
     const st = moving ? Math.sin(w.walk) : 0;
     // desbaste (tirar o ladrão) é com a lurdinha, agachado; desfolha é com a foice, lá no alto
@@ -3999,7 +4034,7 @@ function stepTo(h, sp, dt){
 function showHelperCarry(h){
   while (h.holder.children.length) h.holder.remove(h.holder.children[0]);
   h.holder.visible = !!h.carry;
-  if (h.carry){ const m = makeBunch(h.carry.q, h.carry.bruised, h.carry); m.rotation.z = Math.PI/2; m.position.x = .3; m.traverse(o => { if (o.isMesh) o.castShadow = true; }); h.holder.add(m); h.holder.scale.setScalar(.85); }
+  if (h.carry){ const m = makeBunch(h.carry.q, h.carry.bruised, h.carry); m.rotation.x = 1.3; m.position.set(0, .02, .02); m.traverse(o => { if (o.isMesh) o.castShadow = true; }); h.holder.add(m); h.holder.scale.setScalar(.85); }
 }
 // o Toninho usa o segundo trator; os carregadores vão no trator mais perto
 function pickTractorFor(h){
@@ -4013,6 +4048,7 @@ function setCartGoal(h){
   const side = ((h.pos.x - c.x)*az.x + (h.pos.z - c.z)*az.z) >= 0 ? 1 : -1;
   const ax = tractorAxisX(tractor.parkYaw);
   h.goal.set(c.x + ax.x*(h.cartOff || 0) + az.x*side*1.95, 0, c.z + ax.z*(h.cartOff || 0) + az.z*side*1.95);
+  if (inDock(h.goal.x, h.goal.z)) h.goal.set(c.x + ax.x*(h.cartOff || 0) - az.x*side*1.95, 0, c.z + ax.z*(h.cartOff || 0) - az.z*side*1.95); // não para em cima da plataforma
 }
 function helperStatus(h){
   if (h.stunT > 0) return 'tonto';
@@ -4095,7 +4131,7 @@ function updateHelpers(dt){
     }
     if (game.running && h.state === 'idle' && !(h.stunT > 0) && !h.carry){ const rs = restTick(h, dt); if (rs && rs.moving) h.moving = true; h.restPose = rs && rs.pose || null; } else if (h.rest || h.noWork) restClear(h);
     const b = h.body;
-    b.g.position.set(h.pos.x, heightAt(h.pos.x, h.pos.z) + (h.moving ? Math.abs(Math.cos(h.walk))*.05 : 0) - (h.restPose === 'sit' ? SIT_DROP : 0), h.pos.z); b.g.rotation.y = h.yaw;
+    b.g.position.set(h.pos.x, heightAt(h.pos.x, h.pos.z) + (h.moving ? Math.abs(Math.cos(h.walk))*.05 : 0) - (h.restPose && h.rest ? h.rest.drop || 0 : 0), h.pos.z); b.g.rotation.y = h.yaw;
     b.g.rotation.z = h.stunT > 0 ? Math.sin(now*12)*.18 : 0;
     const st = h.moving ? Math.sin(h.walk) : 0;
     walkPose(b, st, {moving:h.moving, walk:h.walk, stun:h.stunT > 0, twist:chopping ? -.2 : 0, crouch:h.state === 'toBunch' && !h.moving ? .5 : 0});
@@ -4412,7 +4448,12 @@ function pushOut(p){
     const ok = (x, z) => z <= 13.4 && x >= xl && ((x <= xr && z >= zb) || (z >= 6.6 && x <= 104) || (x >= 75.5 && x <= 104 && z >= -1.6));
     const L0 = pushOut.last || (pushOut.last = {x:2, z:6.5});
     if (!ok(p.x, p.z)){ if (ok(L0.x, p.z)) p.x = L0.x; else if (ok(p.x, L0.z)) p.z = L0.z; else { p.x = clamp(L0.x, xl, 104); p.z = Math.max(L0.z, zb); } }
-    if (p.x > 70) saleSolids(p);
+    if (p.x > 70){
+      saleSolids(p);
+      const up = (x, z) => inDock(x, z) || onSteps(x, z) && x > DOCK_STEPS.x0 + DOCK_STEPS.run*.5;
+      if (up(p.x, p.z) !== up(L0.x, L0.z) && !onSteps(p.x, p.z) && !onSteps(L0.x, L0.z)){ if (up(L0.x, p.z) === up(L0.x, L0.z)) p.x = L0.x; else if (up(p.x, L0.z) === up(L0.x, L0.z)) p.z = L0.z; else { p.x = L0.x; p.z = L0.z; } }
+      if (onSteps(p.x, p.z) || onSteps(L0.x, L0.z)){ p.z = clamp(p.z, DOCK_STEPS.z0 + .2, DOCK_STEPS.z1 - .2); } // na escada só anda para cima e para baixo
+    }
     if (ok(p.x, p.z)){ L0.x = p.x; L0.z = p.z; }
   } else {
     if (p.z < 13.9 && !gate) p.z = 13.9;
@@ -5654,11 +5695,19 @@ function farmSolids(p){
 
 /* ---------- venda no galpão: o colhedor tira os cachos da carreta e põe no tanque d'água; o despencador corta as pencas dentro da água, o embalador arruma nas caixas plásticas e o carregador leva até o caminhão ---------- */
 var SALE = {on:false, queue:[], pile:[], pencas:[], fill:0, ready:0, onTruck:0, boxes:[], circles:[], leaving:0};
-const SHED_FLOOR = {x0:76.7, x1:91.3, z0:-1.3, z1:7.3, y:.3};
-function floorAt(x, z){ const h = heightAt(x, z); return x > SHED_FLOOR.x0 && x < SHED_FLOOR.x1 && z > SHED_FLOOR.z0 && z < SHED_FLOOR.z1 ? Math.max(h, SHED_FLOOR.y) : h; }
+const SHED_FLOOR = {x0:76.7, x1:91.3, z0:-1.3, z1:7.3, y:DOCK_Y};
+const inDock = (x, z) => x > SHED_FLOOR.x0 && x < SHED_FLOOR.x1 && z > SHED_FLOOR.z0 && z < SHED_FLOOR.z1;
+const onSteps = (x, z) => x >= DOCK_STEPS.x0 - .05 && x <= DOCK_STEPS.x1 + .05 && z > DOCK_STEPS.z0 && z < DOCK_STEPS.z1;
+function floorAt(x, z){
+  const h = heightAt(x, z);
+  if (inDock(x, z)) return Math.max(h, SHED_FLOOR.y);
+  if (onSteps(x, z)){ const i = Math.floor((x - DOCK_STEPS.x0)/DOCK_STEPS.run); return Math.max(h, DOCK_STEPS.y0 + clamp(i + 1, 0, DOCK_STEPS.n)*DOCK_STEPS.rise); }
+  if (SALE.bedOn && x >= 91.3 && x < 93.5 && z > .8 && z < 5.2) return Math.max(h, SHED_FLOOR.y); // carroceria do caminhão, na mesma altura
+  return h;
+}
 (() => {
   if (M.conc){ M.conc.emissive = C('#3a3832'); M.conc.emissiveMap = M.conc.map; }
-  const FY = SHED_FLOOR.y, TANK = {x:82.2, z:1.6, x0:79.9, x1:84.5}, CUT = {x:80.9, z:1.6}, TABLE = {x:88.2, z:4.2}, PILE = {x:79.3, z:4.3}, TRUCK = {x:95.4, z:4.4}, DROP = {x:82.2, z:3.0}, STAND = {x:85.25, z:2.7}, STACK = {x:86.15, z:2.7};
+  const FY = SHED_FLOOR.y, TANK = {x:82.2, z:1.6, x0:79.9, x1:84.5}, CUT = {x:80.9, z:1.6}, TABLE = {x:88.2, z:4.2}, PILE = {x:79.3, z:4.3}, TRUCK = {x:92.55, z:3.6}, DROP = {x:82.2, z:3.0}, STAND = {x:85.25, z:2.7}, STACK = {x:86.15, z:2.7};
   const K = M.crateKit;
   const solid = (x0, x1, z0, z1) => SALE.boxes.push([x0, x1, z0, z1]);
   // paredes baixas, tanque, mesa, caixas e colunas do galpão
@@ -5683,7 +5732,7 @@ function floorAt(x, z){ const h = heightAt(x, z); return x > SHED_FLOOR.x0 && x 
   const addPenca = (x, z) => { const m = new THREE.Mesh(pencaGeo, pencaM); m.position.set(x !== undefined ? x : rnd(TANK.x, TANK.x1 - .35), FY + .7, z !== undefined ? z : TANK.z + rnd(-.45, .45)); m.rotation.set(rnd(-.25, .25), rnd(0, 6.3), rnd(-.2, .2)); m.castShadow = true; m.userData.tx = rnd(TANK.x + .5, TANK.x1 - .3); m.userData.ph = rnd(0, 6); scene.add(m); SALE.pencas.push(m); };
 
   // caminhão com carroceria de ripas, de ré para o galpão
-  const truck = new THREE.Group(); truck.position.set(TRUCK.x, heightAt(TRUCK.x, TRUCK.z), TRUCK.z); scene.add(truck);
+  const truck = new THREE.Group(); truck.position.set(TRUCK.x, heightAt(TRUCK.x, TRUCK.z), TRUCK.z); truck.rotation.y = -Math.PI/2; scene.add(truck); // de lado: a frente aponta para a estrada (+z) e a lateral fica colada no piso do galpão
   {
     const cab = L('#e8e4da', {roughness:.45, metalness:.25}), stripe = L('#2f6fb0', {roughness:.45}), dark = L('#1c1f22', {roughness:.6}), wood = L('#a07a4a', {roughness:.85}), chrome = L('#c9cdd0', {roughness:.25, metalness:.8}), glass = L('#22313a', {roughness:.1, metalness:.3});
     const add = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; truck.add(m); return m; };
@@ -5697,12 +5746,12 @@ function floorAt(x, z){ const h = heightAt(x, z); return x > SHED_FLOOR.x0 && x 
     add(new THREE.BoxGeometry(.25, .3, 2.35), dark, 4.72, .78, 0);
     // assoalho e grade de ripas (dá para ver as caixas por entre as ripas)
     add(new THREE.BoxGeometry(4.5, .12, 2.3), wood, -.6, 1.0, 0);
-    for (const sd of [-1, 1]){ for (const yy of [1.25, 1.65, 2.05, 2.45]) add(new THREE.BoxGeometry(4.5, .14, .05), wood, -.6, yy, sd*1.12); for (const bx of [-2.8, -1.7, -.6, .5, 1.6]) add(new THREE.BoxGeometry(.1, 1.6, .08), dark, bx, 1.8, sd*1.15); }
+    for (const sd of [-1, 1]){ for (const yy of (sd > 0 ? [1.25] : [1.25, 1.65, 2.05, 2.45])) add(new THREE.BoxGeometry(4.5, .14, .05), wood, -.6, yy, sd*1.12); for (const bx of [-2.8, -1.7, -.6, .5, 1.6]) add(new THREE.BoxGeometry(.1, sd > 0 ? .4 : 1.6, .08), dark, bx, sd > 0 ? 1.2 : 1.8, sd*1.15); }
+    for (const yy of [1.25, 1.65, 2.05, 2.45]) add(new THREE.BoxGeometry(.05, .14, 2.3), wood, -2.85, yy, 0); // tampa de trás fechada; a lateral do galpão fica aberta
     for (const yy of [1.25, 1.65, 2.05, 2.45]) add(new THREE.BoxGeometry(.05, .14, 2.3), wood, 1.65, yy, 0);
     for (const [wx, wz] of [[3, 1.02], [3, -1.02], [-1.7, 1.02], [-1.7, -1.02], [-2.65, 1.02], [-2.65, -1.02]]){ const w = add(new THREE.CylinderGeometry(.5, .5, .32, 20), dark, wx, .5, wz); w.rotation.x = Math.PI/2; const h = add(new THREE.CylinderGeometry(.24, .24, .34, 10), chrome, wx, .5, wz); h.rotation.x = Math.PI/2; }
-    const rp = add(new THREE.BoxGeometry(1.5, .07, 1.2), wood, -3.5, .55, 0); rp.rotation.z = -.42;
   }
-  solid(TRUCK.x - 2.9, TRUCK.x + 4.9, TRUCK.z - 1.25, TRUCK.z + 1.25);
+  solid(TRUCK.x - 1.25, TRUCK.x + 1.25, TRUCK.z - 2.9, TRUCK.z + 4.9);
   // caixas cheias na carroceria: uma malha para as caixas e uma para as pencas (leve)
   const CAP = 7*5*5, crateIM = new THREE.InstancedMesh(K.geo, K.white, CAP), pencaIM = new THREE.InstancedMesh(pencaGeo, pencaM, CAP*2);
   for (let i=0;i<CAP;i++) crateIM.setColorAt(i, new THREE.Color(K.cols[i%4]));
@@ -5730,6 +5779,22 @@ function floorAt(x, z){ const h = heightAt(x, z); return x > SHED_FLOOR.x0 && x 
     if (ban && qg.handGeos){ for (const hg of qg.handGeos){ const h = new THREE.Mesh(hg, ban.material); h.position.copy(ban.position); h.scale.copy(ban.scale); h.castShadow = true; g.add(h); tankHands.push(h); } g.remove(ban); }
     g.rotation.set(0, rnd(0, 6.3), 0); const bb = new THREE.Box3().setFromObject(g); g.position.set(CUT.x, FY + .25 - bb.min.y, CUT.z); scene.add(g); tankBunch = g;
   };
+  // cachos na fila: já ficam boiando deitados na água do tanque até o despencador pegar
+  const WATER_Y = 1.0 + DOCK_Y - .3, qMesh = [];
+  const syncQueue = () => {
+    for (let i = qMesh.length - 1; i >= 0; i--) if (!SALE.queue.includes(qMesh[i].c)){ scene.remove(qMesh[i].g); qMesh.splice(i, 1); }
+    for (const c of SALE.queue) if (!qMesh.some(q => q.c === c)){
+      const g = makeBunch(c.q, c.bruised, Object.assign({}, c, {bag:false})); g.traverse(o => { if (o.isMesh) o.castShadow = true; });
+      const inner = new THREE.Group(); g.rotation.z = Math.PI/2; inner.add(g); const bb = new THREE.Box3().setFromObject(inner), ctr = bb.getCenter(new V3()); g.position.sub(ctr);
+      const holder = new THREE.Group(); holder.add(inner); holder.userData.ph = rnd(0, 6.3); holder.userData.yaw = rnd(-.35, .35); scene.add(holder); qMesh.push({c, g:holder});
+    }
+    qMesh.sort((a, b) => SALE.queue.indexOf(a.c) - SALE.queue.indexOf(b.c));
+  };
+  const floatQueue = () => {
+    qMesh.forEach((q, i) => { const k = i % 6, lay = Math.floor(i/6), ud = q.g.userData;
+      q.g.position.set(81.75 + (k >> 1)*.85 + (lay ? .4 : 0), WATER_Y - .04 + lay*.16 + Math.sin(now*1.3 + ud.ph)*.012, 1.6 + (k & 1 ? .32 : -.32));
+      q.g.rotation.set(Math.sin(now*.9 + ud.ph)*.04, ud.yaw + Math.PI/2, Math.sin(now*1.1 + ud.ph)*.03); });
+  };
   // caixa sendo enchida no cavalete e caixas cheias empilhadas do lado
   let standCi = 0;
   const standCrate = new THREE.Mesh(K.geo, K.mats[0]); standCrate.position.set(STAND.x, FY + .5, STAND.z); standCrate.rotation.y = Math.PI/2; standCrate.castShadow = true; scene.add(standCrate);
@@ -5745,25 +5810,27 @@ function floorAt(x, z){ const h = heightAt(x, z); return x > SHED_FLOOR.x0 && x 
   const pHeld = new THREE.Mesh(pencaGeo, pencaM); pHeld.position.set(0, 1.05, .38); pHeld.visible = false; pack.g.add(pHeld);
   SALE.circles.push([desp.g.position.x, desp.g.position.z, .35], [pack.g.position.x, pack.g.position.z, .35]);
   // dois carregadores: esperam do lado da pilha, pegam a caixa cheia e levam ao caminhão contornando a mesa
-  const PICK = new V3(86.15, FY, 3.25), TO_TRUCK = [new V3(86.4, FY, 5.5), new V3(91.6, 0, 5.7)], DROPS = [new V3(TRUCK.x - 3.9, 0, TRUCK.z - .35), new V3(TRUCK.x - 3.9, 0, TRUCK.z + .35)];
+  const PICK = new V3(86.15, FY, 3.25), TO_TRUCK = [new V3(86.4, FY, 5.5), new V3(91.6, 0, 5.7)], DROPS = [new V3(91.75, FY, 3.0), new V3(91.75, FY, 4.3)]; SALE.bedOn = true; // anda em cima da carroceria para largar a caixa
   const CARS = [['#4a6a9a', {skin:'#e0ac7e', scarf:L('#a03050')}, new V3(87, FY, 3.3)], ['#8a6a3a', {cap:'#3a5a2a', skin:'#8a5432'}, new V3(87.6, FY, 3.15)]].map(([shirt, opt, home], i) => {
     const R = mk(shirt, 'faca', opt, home.x, home.z, -Math.PI/2); if (R.piv) R.piv.visible = false;
     const held = fullCrate(i + 1); held.position.set(0, 1.0, .36); held.rotation.y = Math.PI/2; held.visible = false; R.g.add(held);
-    return {R, held, home, path:[], state:'idle', walk:rnd(0, 6), wait:i*1.5, drop:DROPS[i], pick:i ? new V3(86.9, FY, 3.45) : PICK, way:[new V3(86.4, FY, 5.3 + i*.65), new V3(91.6, 0, 5.4 + i*.65)]};
+    return {R, held, home, path:[], state:'idle', walk:rnd(0, 6), wait:i*1.5, drop:DROPS[i], pick:i ? new V3(86.9, FY, 3.45) : PICK, way:[new V3(86.4, FY, 5.3 + i*.65), new V3(90.3, FY, 5.3 + i*.65)]};
   });
   const carsIdle = () => CARS.every(c => c.state === 'idle');
   // quem é da equipe do galpão entra na conta para ninguém atravessar ninguém
   SALE.crowd = [{p:desp.g.position, fixed:true}, {p:pack.g.position, fixed:true}].concat(CARS.map(c => ({p:c.R.g.position})));
   let despT = 0, despCur = null, packT = 0, despIdle = 0, packIdle = 0;
   // banquinhos de madeira e uma coluna para a equipe descansar quando não tem serviço
+  const crateSeat = (x, z, ci) => { const g = new THREE.Group(); for (let k=0;k<2;k++){ const b = new THREE.Mesh(K.geo, K.mats[(ci + k*2)%4]); b.position.y = k*.29; b.rotation.y = rnd(-.08, .08) + (k ? .1 : 0); g.add(b); }
+    g.position.set(x, FY, z); g.traverse(o => { if (o.isMesh){ o.castShadow = o.receiveShadow = true; } }); scene.add(g); SALE.circles.push([x, z, .3]); };
   const stool = (x, z) => { const g = new THREE.Group(), wm = L('#8a6440', {roughness:.85}); const top = new THREE.Mesh(new THREE.CylinderGeometry(.19, .19, .05, 14), wm); top.position.y = .45; g.add(top);
     for (let k=0;k<3;k++){ const a = k*2.09, lg = new THREE.Mesh(new THREE.CylinderGeometry(.02, .026, .46, 6), wm); lg.position.set(Math.cos(a)*.12, .22, Math.sin(a)*.12); lg.rotation.set(Math.sin(a)*.14, 0, -Math.cos(a)*.14); g.add(lg); }
     g.position.set(x, FY, z); g.traverse(o => { if (o.isMesh){ o.castShadow = o.receiveShadow = true; } }); scene.add(g); SALE.circles.push([x, z, .2]); };
-  const SPOTS = {desp:{type:'stool', x:78.2, z:2.9, yaw:Math.PI/2}, pack:{type:'lean', x:84, z:6.62, yaw:Math.PI}, cars:[{type:'stool', x:90.15, z:2.2, yaw:-Math.PI/2}, {type:'stool', x:90.75, z:2.85, yaw:-Math.PI/2}]};
-  stool(SPOTS.desp.x, SPOTS.desp.z); for (const c of SPOTS.cars) stool(c.x, c.z);
+  const SPOTS = {desp:{type:'stool', x:78.2, z:2.9, yaw:Math.PI/2}, pack:{type:'lean', x:84, z:6.62, yaw:Math.PI}, cars:[{type:'crate', x:88.5, z:6.75, yaw:Math.PI}, {type:'crate', x:89.45, z:6.8, yaw:Math.PI + .15}]};
+  SPOTS.desp.type = 'crate'; crateSeat(SPOTS.desp.x, SPOTS.desp.z, 1); SPOTS.cars.forEach((c, i) => crateSeat(c.x, c.z, i*3));
   const npcGo = (R, x, z, dt, sp = 1.4) => { const p = R.g.position, dx = x - p.x, dz = z - p.z, d = Math.hypot(dx, dz); if (d < .08){ p.x = x; p.z = z; p.y = floorAt(x, z); return true; }
     const st = Math.min(d, sp*dt); p.x += dx/d*st; p.z += dz/d*st; p.y = floorAt(p.x, p.z); R.g.rotation.y = angLerp(R.g.rotation.y, Math.atan2(dx, dz), Math.min(1, dt*8)); R.g.userData.walk = (R.g.userData.walk || 0) + dt*7; walkPose(R, Math.sin(R.g.userData.walk), {moving:true, walk:R.g.userData.walk}); return false; };
-  const npcRest = (R, S, dt) => { if (!npcGo(R, S.x, S.z, dt)) return; R.g.rotation.y = angLerp(R.g.rotation.y, S.yaw, Math.min(1, dt*5)); walkPose(R, 0, {}); restPose(R, S.type); R.g.position.y = floorAt(S.x, S.z) - (S.type === 'stool' ? STOOL_DROP : 0); };
+  const npcRest = (R, S, dt) => { if (!npcGo(R, S.x, S.z, dt)) return; R.g.rotation.y = angLerp(R.g.rotation.y, S.yaw, Math.min(1, dt*5)); walkPose(R, 0, {}); restPose(R, S.type); R.g.position.y = floorAt(S.x, S.z) - (S.type === 'stool' ? STOOL_DROP : S.type === 'crate' ? CRATE_DROP : 0); };
 
   SALE.start = () => {
     if (game.mis) return false;
@@ -5778,10 +5845,10 @@ function floorAt(x, z){ const h = heightAt(x, z); return x > SHED_FLOOR.x0 && x 
     return true;
   };
   SALE.reset = () => {
-    SALE.on = false; SALE.queue = []; SALE.pile = []; SALE.fill = 0; SALE.ready = 0; SALE.leaving = 0; SALE.onTruck = 0;
+    SALE.on = false; SALE.queue = []; syncQueue(); SALE.pile = []; SALE.fill = 0; SALE.ready = 0; SALE.leaving = 0; SALE.onTruck = 0;
     for (const m of SALE.pencas) scene.remove(m); SALE.pencas = [];
     crateIM.count = 0; pencaIM.count = 0;
-    truck.position.set(TRUCK.x, heightAt(TRUCK.x, TRUCK.z), TRUCK.z); truck.visible = true;
+    truck.position.set(TRUCK.x, heightAt(TRUCK.x, TRUCK.z), TRUCK.z); truck.visible = true; SALE.bedOn = true;
     showTankBunch(null); despCur = null; despT = 0; packT = 0; pHeld.visible = false; pack.g.rotation.y = PACK_TANK;
     for (const c of CARS){ c.state = 'idle'; c.path = []; c.held.visible = false; c.R.g.position.copy(c.home); c.R.g.rotation.y = -Math.PI/2; }
     tablePencas.forEach(m => { m.visible = false; }); readyCrates.forEach(b => { b.visible = false; });
@@ -5811,6 +5878,7 @@ function floorAt(x, z){ const h = heightAt(x, z); return x > SHED_FLOOR.x0 && x 
   SALE.left = () => mainT.cargo.length + SALE.pile.length + player.carry.length;
 
   SALE.update = dt => {
+    syncQueue(); floatQueue();
     // despencador: o cacho fica em pé na água e ele corta penca por penca
     if (!despCur && SALE.queue.length){ despIdle = 0; if (npcGo(desp, CUT.x, 2.75, dt)){ desp.g.rotation.y = Math.PI; despCur = SALE.queue.shift(); despCur.cut = 0; showTankBunch(despCur); despCur.n = tankHands.length || 5; despT = despCur.t0 = despCur.n*.6 + .7; } }
     if (despCur){
@@ -5856,9 +5924,9 @@ function floorAt(x, z){ const h = heightAt(x, z); return x > SHED_FLOOR.x0 && x 
       // tudo vendido: fecha a última caixa, o caminhão sai e o dia acaba
       if (!left && !busy && !SALE.pencas.length && !(packT > 0) && !SALE.ready && carsIdle()){
         if (SALE.fill){ SALE.fill = 0; SALE.ready++; tablePencas.forEach(m => { m.visible = false; }); }
-        else if (!SALE.leaving){ SALE.leaving = 5; toast('Caminhão carregado com ' + SALE.onTruck + (SALE.onTruck === 1 ? ' caixa' : ' caixas') + '. Venda feita!'); sfx(220, 180, .5, 'sawtooth', .05); }
+        else if (!SALE.leaving){ SALE.leaving = 5; SALE.bedOn = false; toast('Caminhão carregado com ' + SALE.onTruck + (SALE.onTruck === 1 ? ' caixa' : ' caixas') + '. Venda feita!'); sfx(220, 180, .5, 'sawtooth', .05); }
       }
-      if (SALE.leaving){ SALE.leaving -= dt; truck.position.x += dt*Math.max(0, 5 - SALE.leaving)*1.6; if (SALE.leaving <= 0){ SALE.leaving = 0; SALE.on = false; b.hidden = true; truck.visible = false; endDay(); } }
+      if (SALE.leaving){ SALE.leaving -= dt; truck.position.z += dt*Math.max(0, 5 - SALE.leaving)*1.6; if (SALE.leaving <= 0){ SALE.leaving = 0; SALE.on = false; b.hidden = true; truck.visible = false; endDay(); } }
     }
   };
 })();
