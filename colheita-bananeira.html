@@ -3665,6 +3665,22 @@ function pushTrees(p, skip){
     if (d < .6 && d > 1e-4){ p.x = t.x + dx/d*.6; p.z = t.z + dz/d*.6; }
   }
 }
+// ninguém atravessa ninguém: pessoas que encostam são empurradas para os lados (quem está parado no posto não sai do lugar)
+function separatePeople(){
+  const list = [{p:player.pos, w:1}];
+  for (const w of workers) list.push({p:w.pos, w:1});
+  for (const h of helpers) list.push({p:h.pos, w:1});
+  if (typeof SALE !== 'undefined' && SALE.crowd) for (const c of SALE.crowd) list.push({p:c.p, w:c.fixed ? 0 : 1});
+  const R = .62;
+  for (let i=0;i<list.length;i++) for (let j=i + 1;j<list.length;j++){
+    const a = list[i], b = list[j], dx = b.p.x - a.p.x, dz = b.p.z - a.p.z, d2 = dx*dx + dz*dz, tw = a.w + b.w;
+    if (d2 >= R*R || !tw) continue;
+    let d = Math.sqrt(d2), nx, nz;
+    if (d < 1e-4){ const an = Math.random()*6.283; nx = Math.cos(an); nz = Math.sin(an); d = 0; } else { nx = dx/d; nz = dz/d; }
+    const push = R - d;
+    a.p.x -= nx*push*a.w/tw; a.p.z -= nz*push*a.w/tw; b.p.x += nx*push*b.w/tw; b.p.z += nz*push*b.w/tw;
+  }
+}
 function updateWorkers(dt){
   for (const w of workers){
     const b = w.body;
@@ -4404,6 +4420,7 @@ function update(dt){
 
   updateWorkers(dt);
   updateHelpers(dt);
+  separatePeople();
   updateSnakes(dt);
   updateSwarms(dt);
   for (const b of ground_bunches){
@@ -5525,9 +5542,11 @@ function floorAt(x, z){ const h = heightAt(x, z); return x > SHED_FLOOR.x0 && x 
   const CARS = [['#4a6a9a', {skin:'#e0ac7e', scarf:L('#a03050')}, new V3(87, FY, 3.3)], ['#8a6a3a', {cap:'#3a5a2a', skin:'#8a5432'}, new V3(87.6, FY, 3.15)]].map(([shirt, opt, home], i) => {
     const R = mk(shirt, 'faca', opt, home.x, home.z, -Math.PI/2); if (R.piv) R.piv.visible = false;
     const held = fullCrate(i + 1); held.position.set(0, 1.0, .36); held.rotation.y = Math.PI/2; held.visible = false; R.g.add(held);
-    return {R, held, home, path:[], state:'idle', walk:rnd(0, 6), wait:i*1.5, drop:DROPS[i]};
+    return {R, held, home, path:[], state:'idle', walk:rnd(0, 6), wait:i*1.5, drop:DROPS[i], pick:i ? new V3(86.9, FY, 3.45) : PICK, way:[new V3(86.4, FY, 5.3 + i*.65), new V3(91.6, 0, 5.4 + i*.65)]};
   });
   const carsIdle = () => CARS.every(c => c.state === 'idle');
+  // quem é da equipe do galpão entra na conta para ninguém atravessar ninguém
+  SALE.crowd = [{p:desp.g.position, fixed:true}, {p:pack.g.position, fixed:true}].concat(CARS.map(c => ({p:c.R.g.position})));
   let despT = 0, despCur = null, packT = 0;
 
   SALE.start = () => {
@@ -5606,10 +5625,10 @@ function floorAt(x, z){ const h = heightAt(x, z); return x > SHED_FLOOR.x0 && x 
     readyCrates.forEach((b, i) => { b.visible = i < SALE.ready; });
     // carregadores: cada um pega uma caixa pronta e leva até o caminhão (um não pega a mesma caixa que o outro)
     for (const c of CARS){
-      const R = c.R, cg = R.g.position, go = (to, sp) => { const dx = to.x - cg.x, dz = to.z - cg.z, d = Math.hypot(dx, dz); if (d < .08) return true; const st = Math.min(d, sp*dt); cg.x += dx/d*st; cg.z += dz/d*st; cg.y = floorAt(cg.x, cg.z); R.g.rotation.y = angLerp(R.g.rotation.y, Math.atan2(dx, dz), Math.min(1, dt*8)); c.walk += dt*8; walkPose(R, Math.sin(c.walk), {moving:true, walk:c.walk}); return false; };
+      const R = c.R, cg = R.g.position, go = (to, sp) => { const dx = to.x - cg.x, dz = to.z - cg.z, d = Math.hypot(dx, dz); if (d < (to === c.path[0] && c.path.length > 1 ? .3 : .08)) return true; const st = Math.min(d, sp*dt); cg.x += dx/d*st; cg.z += dz/d*st; cg.y = floorAt(cg.x, cg.z); R.g.rotation.y = angLerp(R.g.rotation.y, Math.atan2(dx, dz), Math.min(1, dt*8)); c.walk += dt*8; walkPose(R, Math.sin(c.walk), {moving:true, walk:c.walk}); return false; };
       if (c.state === 'idle'){ walkPose(R, 0, {}); R.g.rotation.y = angLerp(R.g.rotation.y, -Math.PI/2, Math.min(1, dt*4)); c.wait -= dt; if (c.wait <= 0 && SALE.ready - CARS.filter(o => o.state === 'toPick').length > 0) c.state = 'toPick'; }
-      else if (c.state === 'toPick'){ if (go(PICK, 1.9)){ if (SALE.ready > 0){ SALE.ready--; c.held.visible = true; sfx(160, 120, .06, 'square', .02); c.state = 'toTruck'; c.path = TO_TRUCK.concat([c.drop]); } else { c.state = 'back'; c.path = [c.home]; } } }
-      else if (c.state === 'toTruck'){ if (go(c.path[0], 2.1)){ c.path.shift(); if (!c.path.length){ c.held.visible = false; truckCrate(SALE.onTruck++); sfx(180, 140, .08, 'square', .03); c.state = 'back'; c.path = TO_TRUCK.slice().reverse().concat([c.home]); } } }
+      else if (c.state === 'toPick'){ if (go(c.pick, 1.9)){ if (SALE.ready > 0){ SALE.ready--; c.held.visible = true; sfx(160, 120, .06, 'square', .02); c.state = 'toTruck'; c.path = c.way.concat([c.drop]); } else { c.state = 'back'; c.path = [c.home]; } } }
+      else if (c.state === 'toTruck'){ if (go(c.path[0], 2.1)){ c.path.shift(); if (!c.path.length){ c.held.visible = false; truckCrate(SALE.onTruck++); sfx(180, 140, .08, 'square', .03); c.state = 'back'; c.path = c.way.slice().reverse().concat([c.home]); } } }
       else if (c.state === 'back'){ if (go(c.path[0], 2.1)){ c.path.shift(); if (!c.path.length){ c.state = 'idle'; c.wait = .3; } } }
       if (c.state !== 'idle') R.armL.rotation.x = c.held.visible ? -1.1 : 0;
     }
