@@ -2362,6 +2362,11 @@ const BODY_PF = BODY_PM.map(k => [k[0], k[1]*(k[0] < .97 ? 1.08 : 1.03), k[2], k
 /* ---------- corpo inteiro numa superfície só (tronco, ombros, braços, pernas, pescoço), presa ao esqueleto ---------- */
 const BODY_CACHE = {};
 const smin = (a, b, k) => { const h = Math.max(k - Math.abs(a - b), 0)/k; return Math.min(a, b) - h*h*k*.25; };
+const BODY_JOBS = [];
+function runBodyJobs(budget){
+  const t0 = performance.now();
+  while (BODY_JOBS.length && performance.now() - t0 < budget){ const j = BODY_JOBS[0], r = j.it.next(); if (r.done){ r.value.boundingSphere = j.entry.lo.boundingSphere; j.entry.hi = r.value; BODY_JOBS.shift(); } }
+}
 function bodyGeo(key, B){
   if (BODY_CACHE[key]) return BODY_CACHE[key];
   // tabela do tronco e do quadril por altura (superelipse: meia largura, frente, costas)
@@ -2389,6 +2394,14 @@ function bodyGeo(key, B){
     d -= .0038*Math.sin(a*16 + 2*Math.sin(a*3))*G2(0, y - 1.05, 1, .03) + .0026*Math.sin((y + .55*ax)*95)*G2(ax - .13, y - 1.3, .05, .07) + .002*Math.sin(a*9 + y*30)*G2(0, y - 1.16, 1, .08);
     if (B.female && z > 0) d -= .036*(G2(x - .072, y - 1.27, .055, .06) + G2(x + .072, y - 1.27, .055, .06));
     if (z < 0) d -= .012*(G2(x - .08, y - 1.33, .07, .08) + G2(x + .08, y - 1.33, .07, .08));
+    // carcela de botões, bolso no peito, gola, faixa do cinto e bolsos de trás da calça
+    if (z > 0){
+      if (y < 1.44) d -= .0024*G2(x, y - 1.2, .011, .26);
+      if (!B.female){ const pk = sm01((x - .035)/.008)*sm01((.115 - x)/.008)*sm01((y - 1.235)/.008)*sm01((1.335 - y)/.008); d -= .003*pk; }
+    }
+    if (y > .955 && y < 1.03) d -= .0048*G2(0, y - .99, 1, .016);
+    if (z < 0 && y < .97 && y > .84){ const ax2 = Math.abs(x); d -= .0026*sm01((ax2 - .025)/.008)*sm01((.11 - ax2)/.008)*sm01((y - .86)/.008)*sm01((.95 - y)/.008); }
+    d -= .0032*G2(0, y - 1.445, 1, .011);
     return d;
   };
   // segmentos com raio variando (cone arredondado)
@@ -2414,12 +2427,18 @@ function bodyGeo(key, B){
     return d;
   };
   // amostra a grade e monta a superfície (surface nets)
-  const h = .011, X0 = -.33, YB = .06, Z0 = -.21, NX = Math.ceil(.66/h) + 1, NY = Math.ceil((1.64 - YB)/h) + 1, NZ = Math.ceil(.85/h) + 1;
-  const V = new Float32Array(NX*NY*NZ);
-  for (let k=0;k<NZ;k++) for (let j=0;j<NY;j++) for (let i=0;i<NX;i++) V[i + NX*(j + NY*k)] = sdf(X0 + i*h, YB + j*h, Z0 + k*h);
+  const meshAt = function*(h){
+  const X0 = -.33, YB = .06, Z0 = -.21, NX = Math.ceil(.66/h) + 1, NY = Math.ceil((1.64 - YB)/h) + 1, NZ = Math.ceil(.85/h) + 1;
+  const hc = h*2, NXc = Math.ceil(.66/hc) + 2, NYc = Math.ceil((1.64 - YB)/hc) + 2, NZc = Math.ceil(.85/hc) + 2, Vc = new Float32Array(NXc*NYc*NZc);
+  for (let k=0;k<NZc;k++){ for (let j=0;j<NYc;j++) for (let i=0;i<NXc;i++) Vc[i + NXc*(j + NYc*k)] = sdf(X0 + i*hc, YB + j*hc, Z0 + k*hc); yield; }
+  const V = new Float32Array(NX*NY*NZ), band = hc*1.9;
+  for (let k=0;k<NZ;k++){ yield; for (let j=0;j<NY;j++) for (let i=0;i<NX;i++){
+    const vc = Vc[Math.round(i/2) + NXc*(Math.round(j/2) + NYc*Math.round(k/2))];
+    V[i + NX*(j + NY*k)] = Math.abs(vc) > band ? vc : sdf(X0 + i*h, YB + j*h, Z0 + k*h);
+  } }
   const CX = NX - 1, CY = NY - 1, cell = new Int32Array(CX*CY*(NZ - 1)).fill(-1), pos = [];
   const E12 = [[0,1],[2,3],[4,5],[6,7],[0,2],[1,3],[4,6],[5,7],[0,4],[1,5],[2,6],[3,7]], cv = new Float32Array(8);
-  for (let k=0;k<NZ - 1;k++) for (let j=0;j<NY - 1;j++) for (let i=0;i<NX - 1;i++){
+  for (let k=0;k<NZ - 1;k++){ if (k%3 === 0) yield; for (let j=0;j<NY - 1;j++) for (let i=0;i<NX - 1;i++){
     let neg = 0;
     for (let c=0;c<8;c++){ const v = V[(i + (c & 1)) + NX*((j + ((c >> 1) & 1)) + NY*(k + ((c >> 2) & 1)))]; cv[c] = v; if (v < 0) neg++; }
     if (neg === 0 || neg === 8) continue;
@@ -2427,26 +2446,29 @@ function bodyGeo(key, B){
     for (const [a, b] of E12){ if ((cv[a] < 0) === (cv[b] < 0)) continue; const t = cv[a]/(cv[a] - cv[b]);
       sx += (a & 1) + (((b & 1) - (a & 1))*t); sy += ((a >> 1) & 1) + ((((b >> 1) & 1) - ((a >> 1) & 1))*t); sz += ((a >> 2) & 1) + ((((b >> 2) & 1) - ((a >> 2) & 1))*t); n++; }
     cell[i + CX*(j + CY*k)] = pos.length/3; pos.push(X0 + (i + sx/n)*h, YB + (j + sy/n)*h, Z0 + (k + sz/n)*h);
-  }
+  } }
   const tri = [], C = (i, j, k) => cell[i + CX*(j + CY*k)];
   const quad = (a, b, c, d) => { if (a < 0 || b < 0 || c < 0 || d < 0) return; tri.push(a, b, c, a, c, d); };
-  for (let k=0;k<NZ;k++) for (let j=0;j<NY;j++) for (let i=0;i<NX;i++){
+  for (let k=0;k<NZ;k++){ if (k%3 === 0) yield; for (let j=0;j<NY;j++) for (let i=0;i<NX;i++){
     const v0 = V[i + NX*(j + NY*k)] < 0;
     if (i < NX - 1 && j > 0 && k > 0 && j < NY - 1 && k < NZ - 1 && v0 !== (V[i + 1 + NX*(j + NY*k)] < 0)) quad(C(i, j - 1, k - 1), C(i, j, k - 1), C(i, j, k), C(i, j - 1, k));
     if (j < NY - 1 && i > 0 && k > 0 && i < NX - 1 && k < NZ - 1 && v0 !== (V[i + NX*(j + 1 + NY*k)] < 0)) quad(C(i - 1, j, k - 1), C(i, j, k - 1), C(i, j, k), C(i - 1, j, k));
     if (k < NZ - 1 && i > 0 && j > 0 && i < NX - 1 && j < NY - 1 && v0 !== (V[i + NX*(j + NY*(k + 1))] < 0)) quad(C(i - 1, j - 1, k), C(i, j - 1, k), C(i, j, k), C(i - 1, j, k));
-  }
+  } }
   // assenta cada vértice na superfície e tira a normal do gradiente (bem lisa)
   const nv = pos.length/3, nor = new Float32Array(nv*3), e = .003;
   const grad = (x, y, z, o) => { o[0] = sdf(x + e, y, z) - sdf(x - e, y, z); o[1] = sdf(x, y + e, z) - sdf(x, y - e, z); o[2] = sdf(x, y, z + e) - sdf(x, y, z - e); const l = Math.hypot(o[0], o[1], o[2]) || 1; o[0] /= l; o[1] /= l; o[2] /= l; };
   const gq = [0, 0, 0];
   for (let v=0;v<nv;v++){
+    if (v%800 === 0) yield;
     let x = pos[v*3], y = pos[v*3 + 1], z = pos[v*3 + 2];
-    for (let it=0;it<2;it++){ const d = sdf(x, y, z); grad(x, y, z, gq); x -= gq[0]*d; y -= gq[1]*d; z -= gq[2]*d; }
-    pos[v*3] = x; pos[v*3 + 1] = y; pos[v*3 + 2] = z; grad(x, y, z, gq); nor[v*3] = gq[0]; nor[v*3 + 1] = gq[1]; nor[v*3 + 2] = gq[2];
+    const d = sdf(x, y, z); grad(x, y, z, gq); x -= gq[0]*d; y -= gq[1]*d; z -= gq[2]*d;
+    pos[v*3] = x; pos[v*3 + 1] = y; pos[v*3 + 2] = z; nor[v*3] = gq[0]; nor[v*3 + 1] = gq[1]; nor[v*3 + 2] = gq[2];
   }
   // vira os triângulos que ficaram para dentro
+  yield;
   for (let t=0;t<tri.length;t+=3){
+    if (t%30000 === 0) yield;
     const a = tri[t]*3, b = tri[t + 1]*3, c = tri[t + 2]*3;
     const ux = pos[b] - pos[a], uy = pos[b + 1] - pos[a + 1], uz = pos[b + 2] - pos[a + 2], wx = pos[c] - pos[a], wy = pos[c + 1] - pos[a + 1], wz = pos[c + 2] - pos[a + 2];
     const fx = uy*wz - uz*wy, fy = uz*wx - ux*wz, fz = ux*wy - uy*wx;
@@ -2460,6 +2482,7 @@ function bodyGeo(key, B){
     const ref = Math.abs(ax.y) > .7 ? new V3(0, 0, 1) : new V3(0, 1, 0); ref.addScaledVector(ax, -ref.dot(ax)).normalize(); const r2 = new V3().crossVectors(ax, ref);
     return Math.atan2(r.dot(r2), r.dot(ref))/(Math.PI*2) + .5; };
   for (let v=0;v<nv;v++){
+    if (v%1500 === 0) yield;
     const x = pos[v*3], y = pos[v*3 + 1], z = pos[v*3 + 2];
     const dc = Math.min(colD(x, y, z), segD(N, x, y, z) + .004), dal = armD(AL, x, y, z), dar = armD(AR, x, y, z), dll = legD(LL, x, y, z), dlr = legD(LR, x, y, z);
     const mn = Math.min(dc, dal, dar, dll, dlr), W = [0, 0, 0, 0, 0, 0, 0, 0];
@@ -2490,22 +2513,33 @@ function bodyGeo(key, B){
     ord.forEach(([w, i], k) => { si[v*4 + k] = i; sw[v*4 + k] = w/tot; });
   }
   // emenda da textura: triângulo que cruza a costura ganha cópias dos vértices com u + 1
+  yield;
   const P2 = Array.from(pos), N2 = Array.from(nor), U2 = Array.from(uv), I2 = Array.from(si), W2 = Array.from(sw), M2 = Array.from(mat), dup = new Map();
   for (let t=0;t<tri.length;t+=3){
-    const us = [U2[tri[t]*2], U2[tri[t + 1]*2], U2[tri[t + 2]*2]];
-    if (Math.max(...us) - Math.min(...us) < .5) continue;
+    if (t%30000 === 0) yield;
+    const u0 = U2[tri[t]*2], u1 = U2[tri[t + 1]*2], u2 = U2[tri[t + 2]*2];
+    if (Math.max(u0, u1, u2) - Math.min(u0, u1, u2) < .5) continue;
     for (let q=0;q<3;q++){ const vi = tri[t + q]; if (U2[vi*2] >= .5) continue;
       let d = dup.get(vi); if (d === undefined){ d = P2.length/3; dup.set(vi, d); P2.push(P2[vi*3], P2[vi*3 + 1], P2[vi*3 + 2]); N2.push(N2[vi*3], N2[vi*3 + 1], N2[vi*3 + 2]); U2.push(U2[vi*2] + 1, U2[vi*2 + 1]); for (let r=0;r<4;r++){ I2.push(I2[vi*4 + r]); W2.push(W2[vi*4 + r]); } M2.push(M2[vi]); }
       tri[t + q] = d; }
   }
   // agrupa os triângulos por material (camisa, calça, pele)
+  yield;
   const g = new THREE.BufferGeometry(), groups = [[], [], []];
   for (let t=0;t<tri.length;t+=3){ const m = [M2[tri[t]], M2[tri[t + 1]], M2[tri[t + 2]]]; const mm = m[0] === m[1] || m[0] === m[2] ? m[0] : m[1]; groups[mm].push(tri[t], tri[t + 1], tri[t + 2]); }
-  const idx = []; groups.forEach((gr, m) => { g.addGroup(idx.length, gr.length, m); idx.push(...gr); });
+  yield;
+  const idx = []; groups.forEach((gr, m) => { g.addGroup(idx.length, gr.length, m); for (let q=0;q<gr.length;q++) idx.push(gr[q]); });
+  yield;
   g.setAttribute('position', new THREE.Float32BufferAttribute(P2, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(N2, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(U2, 2));
   g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(I2, 4)); g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(W2, 4)); g.setIndex(idx);
   g.computeBoundingSphere(); g.boundingSphere.radius += .55;
-  return (BODY_CACHE[key] = g);
+  return g;
+  };
+  // a versão leve sai na hora; a detalhada é montada aos poucos, alguns milissegundos por quadro
+  const runAll = it => { let r; while (!(r = it.next()).done); return r.value; };
+  const entry = {lo:runAll(meshAt(.014)), hi:null}; BODY_CACHE[key] = entry;
+  BODY_JOBS.push({entry, it:meshAt(.0072)});
+  return entry;
 }
 const skinnedOf = m => { if (!m.userData.sk){ const c = m.clone(); c.skinning = true; m.userData.sk = c; } return m.userData.sk; };
 
@@ -2545,7 +2579,9 @@ function chunkInstances(im, cell, maxDist){
   }
   parent.remove(im);
 }
+const PEOPLE_LOD = [], _plp = new V3();
 function updateCull(){
+  for (const sm of PEOPLE_LOD){ sm.getWorldPosition(_plp); const near = _plp.distanceToSquared(camera.position) < 14*14; const E = sm.userData.body, want = near && E.hi ? E.hi : E.lo; if (sm.geometry !== want) sm.geometry = want; }
   const cp0 = camera.position;
   for (const t of trees){ const c = t.crown, hi = c && c.userData.hi; if (!hi) continue; const far = (t.x - cp0.x)**2 + (t.z - cp0.z)**2 > 30*30; c.geometry = far ? hi.userData.low : hi; if (t.far) for (const o of t.far) o.visible = !far; if (t.kidG) t.kidG.visible = !far && t.kidShow !== false; }
   const Lc = chunkInstances.list; if (!Lc) return; const cp = camera.position; for (const ch of Lc) if (ch.userData.cullD) ch.visible = ch.userData.cullC.distanceTo(cp) < ch.userData.cullD; }
@@ -2698,10 +2734,11 @@ function makePerson(shirtMat, tool, opt = {}){
       S_L:Lp(armL), E_L:Lp(elbow), C_L:Lp(elbow, 0, -.1, 0), W_L:Lp(elbow, 0, -.25, 0),
       S_R:Lp(piv), E_R:Lp(piv, EL.x, EL.y, EL.z), C_R:Lp(piv, EL.x + fdir.x*.1, EL.y + fdir.y*.1, EL.z + fdir.z*.1), W_R:Lp(piv, HN.x - fdir.x*.05, HN.y - fdir.y*.05, HN.z - fdir.z*.05),
       hipL:Lp(R.legL), kneeL:Lp(R.kneeL), ankleL:Lp(R.ankleL), hipR:Lp(R.legR), kneeR:Lp(R.kneeR), ankleR:Lp(R.ankleR)};
-    const sm = new THREE.SkinnedMesh(bodyGeo(female + '|' + build, B), [skinnedOf(shirtMat), skinnedOf(pants), skinnedOf(skin)]);
+    const BE = bodyGeo(female + '|' + build, B), sm = new THREE.SkinnedMesh(BE.lo, [skinnedOf(shirtMat), skinnedOf(pants), skinnedOf(skin)]);
     sm.castShadow = sm.receiveShadow = true; g.add(sm);
     g.updateMatrixWorld(true); sm.bind(new THREE.Skeleton([U, armL, elbow, piv, R.legL, R.kneeL, R.legR, R.kneeR]));
     R.body = sm; armL.rotation.z = az0;
+    sm.userData.body = BE; PEOPLE_LOD.push(sm);
   }
   if (opt.player || tool === 'bomba' || tool === 'saco' || tool === 'foice'){
     const foiceParts = piv.children.filter(c => c.material === M.handle || c.material === M.blade || (c.userData.foice && !c.userData.lurd));
@@ -5821,6 +5858,7 @@ function loop(ts){
   if (raw < .5){ perfAcc += raw; perfN++; }
   if (perfAcc > 3){ const slow = perfAcc/perfN > 1/38; if (slow && quality > .75){ quality = Math.max(.75, quality - .15); renderer.setPixelRatio(quality); resize(); } else if (slow && postOn && !save.gfxKeep){ save.gfxKeep = 1; setGfx(false); toast('O jogo estava lento: gráfico mudou para Leve (aperte G para voltar ao Ultra)'); } perfAcc = 0; perfN = 0; }
   update(dt);
+  runBodyJobs(game.running ? 4 : 12);
   if ((loop.k = ((loop.k || 0) + 1)%6) === 0) updateCull();
   if (postOn) POST.render(ts/1000); else renderer.render(scene, camera);
   updateUI(dt);
