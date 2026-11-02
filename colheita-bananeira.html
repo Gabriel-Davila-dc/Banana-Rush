@@ -240,7 +240,8 @@ const VAR = {
 const varietyAt = (x, z) => (x > 23.5 || z < -30) ? 'prata' : 'nanica';
 
 /* ---------- progresso salvo ---------- */
-const SAVE_KEY = 'bananal3d-v1';
+const MAX_MODE = !!window.BANANAL_MAX || /[?&#]max(?![a-z])/.test(location.href);
+const SAVE_KEY = MAX_MODE ? 'bananal3d-max' : 'bananal3d-v1';
 const freshSave = () => ({day:1, money:0, best:0, total:0, lv:{foice:0, luva:0, botina:0, jaca:0, carreta:0, cafe:0, adubo:0, terra:0, cuidado:0, ajudante:0, trator:0, trator2:0, desumb:0, banho:0, ensaca:0, manejo:0, escora:0}, field:null, ach:{}, totalBunches:0});
 let save = freshSave();
 try{ const s = JSON.parse(localStorage.getItem(SAVE_KEY)); if (s && s.lv){ save = Object.assign(freshSave(), s); save.lv = Object.assign(freshSave().lv, s.lv); } }catch(e){}
@@ -313,6 +314,12 @@ const UP = [
   {id:'trator',  nome:'Trator turbinado',    descs:['Motor turbo: o trator anda 40% mais rápido.', 'Pesos na frente e tração: sai antes e descarrega em 1 segundo.', 'Cabine de vidro com giroflex: estaciona sempre pertinho de você.'], fim:'Trator no máximo.', custos:[600, 1360, 2890], nv:[3, 5, 7], grupo:'fazenda'},
   {id:'cafe',    nome:'Café reforçado',      desc:'+20 segundos de colheita por dia.',           custos:[260, 650, 1360], nv:[2, 4, 6], grupo:'colhedor'},
 ];
+// tudo no máximo para ver como fica: todas as melhorias, todas as pessoas, nível máximo e dinheiro sobrando
+if (MAX_MODE){
+  for (const u of UP) save.lv[u.id] = (u.custos || []).length;
+  save.xp = Math.max(save.xp || 0, XP_NEED[MAX_LVL - 1] || 0); save.money = Math.max(save.money, 99999); if (save.day < 7) save.day = 7;
+  persist();
+}
 const dayLength = () => 120 + 20*save.lv.cafe;
 const CART_SIZES = [
   {cap:12, L:2.9, W:1.95, h:.55, axles:1},
