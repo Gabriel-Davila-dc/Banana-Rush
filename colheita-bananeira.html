@@ -915,20 +915,33 @@ function fingerGeo(c){
   g.computeVertexNormals();
   return g;
 }
+// ponta escura e pescoço mais claro de cada dedo
+function bunchColor(geo){
+  const uv = geo.attributes.uv.array, n = uv.length/2, col = new Float32Array(n*3);
+  for (let i=0;i<n;i++){
+    const u = uv[i*2]; let r = 1, g2 = 1, b = 1;
+    if (u > .88){ const k = Math.min(1, (u - .88)/.09); r = 1 - .7*k; g2 = 1 - .78*k; b = 1 - .8*k; }
+    else if (u < .16){ const k = 1 - u/.16; r = 1 - .2*k; g2 = 1 - .1*k; b = 1 - .3*k; }
+    col[i*3] = r; col[i*3+1] = g2; col[i*3+2] = b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); return geo;
+}
 for (const q in QGEO){
-  const c = QGEO[q], dy = c.len*.5, parts = [], fg = fingerGeo(c);
-  for (let i=0;i<c.hands;i++){
+  const c = QGEO[q], dy = c.len*.5, parts = [], fg = fingerGeo(c), handParts = [];
+  for (let i=0;i<c.hands;i++){ handParts.push([]);
     const n = c.n - Math.floor(i/2), a0 = i*2.4, y = -i*dy, r0 = c.r*(1 - i*.035);
     for (let k=0;k<n;k++){
       const row = k%2, f = n > 1 ? k/(n - 1) : .5, a = a0 + (f - .5)*2.7;
       const r = r0 + row*c.tube*1.5, g = fg.clone();
       g.applyMatrix4(new THREE.Matrix4().makeTranslation(Math.cos(a)*r, y + row*c.len*.16, Math.sin(a)*r)
         .multiply(new THREE.Matrix4().makeRotationY(-a + rnd(-.08, .08))).multiply(new THREE.Matrix4().makeRotationZ(-.42 + row*.14 + rnd(-.06, .06))));
-      parts.push(g);
+      parts.push(g); handParts[i].push(g);
     }
   }
   c.ban = merge(parts);
-  {
+  c.handGeos = handParts.map(list => bunchColor(merge(list)));
+  bunchColor(c.ban);
+  if (0){
     const uv = c.ban.attributes.uv.array, n = uv.length/2, col = new Float32Array(n*3);
     for (let i=0;i<n;i++){
       const u = uv[i*2];
@@ -5419,12 +5432,18 @@ const SHED_FLOOR = {x0:76.7, x1:91.3, z0:-1.3, z1:7.3, y:.3};
 function floorAt(x, z){ const h = heightAt(x, z); return x > SHED_FLOOR.x0 && x < SHED_FLOOR.x1 && z > SHED_FLOOR.z0 && z < SHED_FLOOR.z1 ? Math.max(h, SHED_FLOOR.y) : h; }
 (() => {
   if (M.conc){ M.conc.emissive = C('#3a3832'); M.conc.emissiveMap = M.conc.map; }
-  const FY = SHED_FLOOR.y, TANK = {x:82.2, z:1.6, x0:79.9, x1:84.5}, CUT = {x:80.9, z:1.6}, TABLE = {x:88.2, z:4.2}, PILE = {x:79.3, z:4.3}, TRUCK = {x:98.2, z:4.4}, DROP = {x:83.3, z:3.0};
+  const FY = SHED_FLOOR.y, TANK = {x:82.2, z:1.6, x0:79.9, x1:84.5}, CUT = {x:80.9, z:1.6}, TABLE = {x:88.2, z:4.2}, PILE = {x:79.3, z:4.3}, TRUCK = {x:98.2, z:4.4}, DROP = {x:82.2, z:3.0}, STAND = {x:85.25, z:2.7}, STACK = {x:86.15, z:2.7};
   const K = M.crateKit;
   const solid = (x0, x1, z0, z1) => SALE.boxes.push([x0, x1, z0, z1]);
   // paredes baixas, tanque, mesa, caixas e colunas do galpão
   solid(76.8, 91.3, -1.2, -.75); solid(76.8, 77.25, -1.3, 7.3);
   solid(79.75, 84.65, .75, 2.45); solid(87, 89.4, 3.65, 4.75); solid(86.9, 89.4, -.15, 1.2); solid(78.1, 79.9, 5.4, 5.85);
+  solid(84.9, 86.5, 2.45, 2.95);
+  // cavalete baixo ao lado do tanque, onde a caixa é enchida
+  { const st = new THREE.Group(), sm = L('#7c8084', {roughness:.5, metalness:.5}); st.position.set(STAND.x, FY, STAND.z); scene.add(st);
+    const top = new THREE.Mesh(new THREE.BoxGeometry(.64, .04, .44), sm); top.position.y = .48; st.add(top);
+    for (const [lx, lz] of [[-.28, -.18], [.28, -.18], [-.28, .18], [.28, .18]]){ const lg = new THREE.Mesh(new THREE.BoxGeometry(.035, .48, .035), sm); lg.position.set(lx, .24, lz); st.add(lg); }
+    st.traverse(o => { if (o.isMesh){ o.castShadow = o.receiveShadow = true; } }); }
   for (const x of [77, 80.5, 84, 87.5, 91]) for (const z of [-1, 7]) SALE.circles.push([x, z, .2]);
 
   // penca: dedos curvados para cima saindo da almofada (coroa)
@@ -5434,7 +5453,8 @@ function floorAt(x, z){ const h = heightAt(x, z); return x > SHED_FLOOR.x0 && x 
     const cr = new THREE.BoxGeometry(.2, .04, .05); cr.translate(0, 0, -.005); parts.push(cr);
     return merge(parts); })();
   const pencaM = L('#7fae3c', {roughness:.55});
-  const addPenca = () => { const m = new THREE.Mesh(pencaGeo, pencaM); m.position.set(rnd(TANK.x - .4, TANK.x1 - .35), FY + .7, TANK.z + rnd(-.45, .45)); m.rotation.set(rnd(-.25, .25), rnd(0, 6.3), rnd(-.2, .2)); m.castShadow = true; scene.add(m); SALE.pencas.push(m); };
+  // a penca cortada cai na água junto do cacho e vai boiando devagar até a ponta do embalador
+  const addPenca = (x, z) => { const m = new THREE.Mesh(pencaGeo, pencaM); m.position.set(x !== undefined ? x : rnd(TANK.x, TANK.x1 - .35), FY + .7, z !== undefined ? z : TANK.z + rnd(-.45, .45)); m.rotation.set(rnd(-.25, .25), rnd(0, 6.3), rnd(-.2, .2)); m.castShadow = true; m.userData.tx = rnd(TANK.x + .5, TANK.x1 - .3); m.userData.ph = rnd(0, 6); scene.add(m); SALE.pencas.push(m); };
 
   // caminhão com carroceria de ripas, de ré para o galpão
   const truck = new THREE.Group(); truck.position.set(TRUCK.x, heightAt(TRUCK.x, TRUCK.z), TRUCK.z); scene.add(truck);
@@ -5476,26 +5496,36 @@ function floorAt(x, z){ const h = heightAt(x, z); return x > SHED_FLOOR.x0 && x 
   SALE.refreshPile = () => { while (pileBunches.children.length) pileBunches.remove(pileBunches.children[0]);
     SALE.pile.slice(0, 9).forEach((c, i) => { const b = makeBunch(c.q, c.bruised, c); b.rotation.set(0, (i%3 - 1)*.25, Math.PI/2); b.scale.setScalar(.8); b.position.set(((i%3) - 1)*.5, .3 + Math.floor(i/3)*.28, ((Math.floor(i/3)%2) - .5)*.3); pileBunches.add(b); }); };
 
-  // cacho em pé dentro da água enquanto é despencado
-  let tankBunch = null;
-  const showTankBunch = c => { if (tankBunch) scene.remove(tankBunch); tankBunch = c ? makeBunch(c.q, c.bruised, c) : null;
-    if (tankBunch){ tankBunch.rotation.set(0, rnd(0, 6.3), 0); const bb = new THREE.Box3().setFromObject(tankBunch); tankBunch.position.set(CUT.x, FY + .25 - bb.min.y, CUT.z); scene.add(tankBunch); } };
-  // caixa sendo arrumada na mesa e caixas prontas esperando
-  let tableCi = 0;
-  const tableCrate = new THREE.Mesh(K.geo, K.mats[0]); tableCrate.position.set(TABLE.x + .55, .99, TABLE.z); tableCrate.castShadow = true; scene.add(tableCrate);
-  const tablePencas = []; for (let i=0;i<2;i++){ const m = new THREE.Mesh(pencaGeo, pencaM); m.position.set(TABLE.x + .55 + (i ? .13 : -.13), 1.19, TABLE.z); m.rotation.y = Math.PI/2 + (i ? Math.PI : 0); m.visible = false; scene.add(m); tablePencas.push(m); }
-  const readyCrates = []; for (let i=0;i<4;i++){ const g = fullCrate(i); g.position.set(TABLE.x - .6 + (i%2)*.6, .99 + Math.floor(i/2)*.31, TABLE.z); g.visible = false; scene.add(g); readyCrates.push(g); }
+  // cacho em pé dentro da água: o engaço continua inteiro e as pencas saem uma por uma
+  let tankBunch = null, tankHands = [];
+  const showTankBunch = c => {
+    if (tankBunch) scene.remove(tankBunch); tankBunch = null; tankHands = []; if (!c) return;
+    const g = makeBunch(c.q, c.bruised, Object.assign({}, c, {bag:false})), qg = QGEO[c.q], ban = g.children.find(o => o.geometry === qg.ban);
+    if (ban && qg.handGeos){ for (const hg of qg.handGeos){ const h = new THREE.Mesh(hg, ban.material); h.position.copy(ban.position); h.scale.copy(ban.scale); h.castShadow = true; g.add(h); tankHands.push(h); } g.remove(ban); }
+    g.rotation.set(0, rnd(0, 6.3), 0); const bb = new THREE.Box3().setFromObject(g); g.position.set(CUT.x, FY + .25 - bb.min.y, CUT.z); scene.add(g); tankBunch = g;
+  };
+  // caixa sendo enchida no cavalete e caixas cheias empilhadas do lado
+  let standCi = 0;
+  const standCrate = new THREE.Mesh(K.geo, K.mats[0]); standCrate.position.set(STAND.x, FY + .5, STAND.z); standCrate.rotation.y = Math.PI/2; standCrate.castShadow = true; scene.add(standCrate);
+  const tablePencas = []; for (let i=0;i<4;i++){ const m = new THREE.Mesh(pencaGeo, pencaM); m.position.set(STAND.x, FY + .62 + (i > 1 ? .09 : 0), STAND.z + (i%2 ? .13 : -.13)); m.rotation.y = i%2 ? Math.PI : 0; m.visible = false; scene.add(m); tablePencas.push(m); }
+  const readyCrates = []; for (let i=0;i<4;i++){ const g = fullCrate(i); g.position.set(STACK.x, FY + i*.31, STACK.z); g.rotation.y = Math.PI/2; g.visible = false; scene.add(g); readyCrates.push(g); }
 
   // equipe do galpão
   const mk = (shirt, tool, opt, x, z, yaw) => { const R = makePerson(L(shirt, {roughness:.9}), tool, opt); R.g.position.set(x, FY, z); R.g.rotation.y = yaw; scene.add(R.g); walkPose(R, 0, {}); return R; };
   const desp = mk('#b84a3a', 'faca', {cap:'#2a4a7a', skin:'#a8693f'}, CUT.x, 2.75, Math.PI);
-  const pack = mk('#5f8a4a', 'faca', {hair:L('#2a1a10'), skin:'#d39a6a'}, 85.5, 2.85, Math.PI*.75);
-  const carr = mk('#4a6a9a', 'faca', {skin:'#e0ac7e', scarf:L('#a03050')}, 90.2, TABLE.z, -Math.PI/2);
-  if (carr.piv) carr.piv.visible = false; if (pack.piv) pack.piv.visible = false;
-  const held = fullCrate(1); held.position.set(0, 1.0, .36); held.rotation.y = Math.PI/2; held.visible = false; carr.g.add(held);
+  const PACK = {x:84.3, z:3.0}, PACK_TANK = Math.PI, PACK_CRATE = Math.atan2(STAND.x - PACK.x, STAND.z - PACK.z);
+  const pack = mk('#5f8a4a', 'faca', {hair:L('#2a1a10'), skin:'#d39a6a'}, PACK.x, PACK.z, PACK_TANK);
+  if (pack.piv) pack.piv.visible = false;
   const pHeld = new THREE.Mesh(pencaGeo, pencaM); pHeld.position.set(0, 1.05, .38); pHeld.visible = false; pack.g.add(pHeld);
   SALE.circles.push([desp.g.position.x, desp.g.position.z, .35], [pack.g.position.x, pack.g.position.z, .35]);
-  const CAR = {home:new V3(90.2, FY, TABLE.z), drop:new V3(TRUCK.x - 3.9, 0, TRUCK.z), state:'idle', walk:0};
+  // dois carregadores: esperam do lado da pilha, pegam a caixa cheia e levam ao caminhão contornando a mesa
+  const PICK = new V3(86.15, FY, 3.25), TO_TRUCK = [new V3(86.4, FY, 5.5), new V3(91.6, 0, 5.7)], DROPS = [new V3(TRUCK.x - 3.9, 0, TRUCK.z - .35), new V3(TRUCK.x - 3.9, 0, TRUCK.z + .35)];
+  const CARS = [['#4a6a9a', {skin:'#e0ac7e', scarf:L('#a03050')}, new V3(87, FY, 3.3)], ['#8a6a3a', {cap:'#3a5a2a', skin:'#8a5432'}, new V3(87.6, FY, 3.15)]].map(([shirt, opt, home], i) => {
+    const R = mk(shirt, 'faca', opt, home.x, home.z, -Math.PI/2); if (R.piv) R.piv.visible = false;
+    const held = fullCrate(i + 1); held.position.set(0, 1.0, .36); held.rotation.y = Math.PI/2; held.visible = false; R.g.add(held);
+    return {R, held, home, path:[], state:'idle', walk:rnd(0, 6), wait:i*1.5, drop:DROPS[i]};
+  });
+  const carsIdle = () => CARS.every(c => c.state === 'idle');
   let despT = 0, despCur = null, packT = 0;
 
   SALE.start = () => {
@@ -5515,7 +5545,8 @@ function floorAt(x, z){ const h = heightAt(x, z); return x > SHED_FLOOR.x0 && x 
     for (const m of SALE.pencas) scene.remove(m); SALE.pencas = [];
     crateIM.count = 0; pencaIM.count = 0;
     truck.position.set(TRUCK.x, heightAt(TRUCK.x, TRUCK.z), TRUCK.z); truck.visible = true;
-    showTankBunch(null); despCur = null; despT = 0; packT = 0; CAR.state = 'idle'; held.visible = false; pHeld.visible = false; carr.g.position.copy(CAR.home); carr.g.rotation.y = -Math.PI/2;
+    showTankBunch(null); despCur = null; despT = 0; packT = 0; pHeld.visible = false; pack.g.rotation.y = PACK_TANK;
+    for (const c of CARS){ c.state = 'idle'; c.path = []; c.held.visible = false; c.R.g.position.copy(c.home); c.R.g.rotation.y = -Math.PI/2; }
     tablePencas.forEach(m => { m.visible = false; }); readyCrates.forEach(b => { b.visible = false; });
     SALE.refreshPile(); if (SALE.badge) SALE.badge.hidden = true;
   };
@@ -5544,11 +5575,15 @@ function floorAt(x, z){ const h = heightAt(x, z); return x > SHED_FLOOR.x0 && x 
 
   SALE.update = dt => {
     // despencador: o cacho fica em pé na água e ele corta penca por penca
-    if (!despCur && SALE.queue.length){ despCur = SALE.queue.shift(); despT = 3.2; despCur.cut = 0; showTankBunch(despCur); }
+    if (!despCur && SALE.queue.length){ despCur = SALE.queue.shift(); despCur.cut = 0; showTankBunch(despCur); despCur.n = tankHands.length || 5; despT = despCur.t0 = despCur.n*.6 + .7; }
     if (despCur){
       despT -= dt; walkPose(desp, 0, {crouch:.22}); if (desp.piv) desp.piv.rotation.x = .7 + Math.sin(now*7)*.5;
-      const n = clamp(Math.round((despCur.kg || 20)/5), 3, 7), due = Math.floor((1 - despT/3.2)*n);
-      while (despCur.cut < Math.min(n, due)){ despCur.cut++; addPenca(); noiseHit(.08, 'highpass', 2500, .06); if (tankBunch) tankBunch.scale.setScalar(Math.max(.35, 1 - despCur.cut/n*.7)); }
+      const n = despCur.n, due = Math.floor((despCur.t0 - despT)/.6);
+      while (despCur.cut < Math.min(n, due)){
+        const h = tankHands[despCur.cut]; despCur.cut++;
+        if (h){ h.visible = false; addPenca(CUT.x + rnd(.25, .5), CUT.z + rnd(-.35, .35)); } else addPenca();
+        noiseHit(.08, 'highpass', 2500, .06);
+      }
       if (despT <= 0){
         while (despCur.cut < n){ despCur.cut++; addPenca(); }
         const val = despCur.val || bunchValue(despCur);
@@ -5558,24 +5593,31 @@ function floorAt(x, z){ const h = heightAt(x, z); return x > SHED_FLOOR.x0 && x 
       }
     } else walkPose(desp, 0, {});
     // embalador: tira a penca da água e arruma na caixa plástica (2 pencas por caixa)
-    if (packT > 0){ packT -= dt; pHeld.visible = packT > .2; pack.g.rotation.y = angLerp(pack.g.rotation.y, packT > .75 ? -Math.PI*.6 : Math.PI*.35, Math.min(1, dt*6)); walkPose(pack, 0, {crouch:packT > .75 ? .3 : .1});
-      if (packT <= 0){ packT = 0; tablePencas[SALE.fill].visible = true; SALE.fill++; if (SALE.fill >= 2){ SALE.fill = 0; SALE.ready++; tablePencas.forEach(m => { m.visible = false; }); tableCi++; tableCrate.material = K.mats[tableCi%4]; } } }
-    else if (SALE.pencas.length && SALE.ready < 4){ scene.remove(SALE.pencas.pop()); packT = 1.4; }
-    else walkPose(pack, 0, {});
+    // pencas boiando vão para o lado do embalador
+    for (const m of SALE.pencas){ const u = m.userData; m.position.x += (u.tx - m.position.x)*Math.min(1, dt*.6); u.ph += dt; m.position.y = FY + .7 + Math.sin(u.ph*1.7)*.008; m.rotation.y += dt*.1; }
+    // embalador: fica parado na ponta do tanque; pega a penca da água e vira só um pouco para pôr na caixa do cavalete
+    const pIdx = SALE.pencas.findIndex(m => m.position.x > TANK.x + .3);
+    if (packT > 0){ packT -= dt; pHeld.visible = packT < .75 && packT > .1; pack.g.rotation.y = angLerp(pack.g.rotation.y, packT > .75 ? PACK_TANK : PACK_CRATE, Math.min(1, dt*5)); walkPose(pack, 0, {crouch:packT > .75 ? .35 : .15});
+      if (packT <= 0){ packT = 0; pHeld.visible = false; tablePencas[SALE.fill].visible = true; SALE.fill++; if (SALE.fill >= 4){ SALE.fill = 0; SALE.ready++; tablePencas.forEach(m => { m.visible = false; }); standCi++; standCrate.material = K.mats[standCi%4]; } } }
+    else if (pIdx >= 0 && SALE.ready < 4){ scene.remove(SALE.pencas.splice(pIdx, 1)[0]); packT = 1.15; }
+    else { walkPose(pack, 0, {}); pack.g.rotation.y = angLerp(pack.g.rotation.y, PACK_TANK, Math.min(1, dt*3)); }
     readyCrates.forEach((b, i) => { b.visible = i < SALE.ready; });
-    // carregador: leva cada caixa pronta até o caminhão
-    const cg = carr.g.position, go = (to, sp) => { const dx = to.x - cg.x, dz = to.z - cg.z, d = Math.hypot(dx, dz); if (d < .08) return true; const st = Math.min(d, sp*dt); cg.x += dx/d*st; cg.z += dz/d*st; cg.y = floorAt(cg.x, cg.z); carr.g.rotation.y = angLerp(carr.g.rotation.y, Math.atan2(dx, dz), Math.min(1, dt*8)); CAR.walk += dt*7; walkPose(carr, Math.sin(CAR.walk), {moving:true, walk:CAR.walk}); return false; };
-    if (CAR.state === 'idle'){ walkPose(carr, 0, {}); if (SALE.ready > 0){ SALE.ready--; held.visible = true; CAR.state = 'toTruck'; } }
-    else if (CAR.state === 'toTruck'){ if (go(CAR.drop, 1.6)){ held.visible = false; truckCrate(SALE.onTruck++); sfx(180, 140, .08, 'square', .03); CAR.state = 'back'; } }
-    else if (CAR.state === 'back'){ if (go(CAR.home, 1.6)){ carr.g.rotation.y = -Math.PI/2; CAR.state = 'idle'; } }
-    if (CAR.state !== 'idle'){ carr.armL.rotation.x = held.visible ? -1.1 : 0; }
+    // carregadores: cada um pega uma caixa pronta e leva até o caminhão (um não pega a mesma caixa que o outro)
+    for (const c of CARS){
+      const R = c.R, cg = R.g.position, go = (to, sp) => { const dx = to.x - cg.x, dz = to.z - cg.z, d = Math.hypot(dx, dz); if (d < .08) return true; const st = Math.min(d, sp*dt); cg.x += dx/d*st; cg.z += dz/d*st; cg.y = floorAt(cg.x, cg.z); R.g.rotation.y = angLerp(R.g.rotation.y, Math.atan2(dx, dz), Math.min(1, dt*8)); c.walk += dt*8; walkPose(R, Math.sin(c.walk), {moving:true, walk:c.walk}); return false; };
+      if (c.state === 'idle'){ walkPose(R, 0, {}); R.g.rotation.y = angLerp(R.g.rotation.y, -Math.PI/2, Math.min(1, dt*4)); c.wait -= dt; if (c.wait <= 0 && SALE.ready - CARS.filter(o => o.state === 'toPick').length > 0) c.state = 'toPick'; }
+      else if (c.state === 'toPick'){ if (go(PICK, 1.9)){ if (SALE.ready > 0){ SALE.ready--; c.held.visible = true; sfx(160, 120, .06, 'square', .02); c.state = 'toTruck'; c.path = TO_TRUCK.concat([c.drop]); } else { c.state = 'back'; c.path = [c.home]; } } }
+      else if (c.state === 'toTruck'){ if (go(c.path[0], 2.1)){ c.path.shift(); if (!c.path.length){ c.held.visible = false; truckCrate(SALE.onTruck++); sfx(180, 140, .08, 'square', .03); c.state = 'back'; c.path = TO_TRUCK.slice().reverse().concat([c.home]); } } }
+      else if (c.state === 'back'){ if (go(c.path[0], 2.1)){ c.path.shift(); if (!c.path.length){ c.state = 'idle'; c.wait = .3; } } }
+      if (c.state !== 'idle') R.armL.rotation.x = c.held.visible ? -1.1 : 0;
+    }
     // aviso do que falta
     if (SALE.on){
       let b = SALE.badge; if (!b){ b = SALE.badge = document.createElement('div'); b.style.cssText = 'position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 92px);transform:translateX(-50%);padding:6px 14px;border-radius:999px;background:rgba(30,60,25,.82);color:#fff6c8;font:600 13px system-ui,sans-serif;z-index:30;pointer-events:none;text-align:center'; document.body.appendChild(b); }
       const left = SALE.left(), busy = SALE.queue.length + (despCur ? 1 : 0);
-      b.hidden = false; b.textContent = mainT.state === 'saleGo' ? 'Venda: a carreta está indo para o galpão…' : left ? 'Venda: leve ' + left + (left > 1 ? ' cachos' : ' cacho') + ' até o tanque do galpão' : busy || SALE.pencas.length || SALE.fill || SALE.ready || CAR.state !== 'idle' ? 'A equipe está despencando e encaixotando…' : 'Caminhão carregado!';
+      b.hidden = false; b.textContent = mainT.state === 'saleGo' ? 'Venda: a carreta está indo para o galpão…' : left ? 'Venda: leve ' + left + (left > 1 ? ' cachos' : ' cacho') + ' até o tanque do galpão' : busy || SALE.pencas.length || SALE.fill || SALE.ready || !carsIdle() ? 'A equipe está despencando e encaixotando…' : 'Caminhão carregado!';
       // tudo vendido: fecha a última caixa, o caminhão sai e o dia acaba
-      if (!left && !busy && !SALE.pencas.length && !(packT > 0) && !SALE.ready && CAR.state === 'idle'){
+      if (!left && !busy && !SALE.pencas.length && !(packT > 0) && !SALE.ready && carsIdle()){
         if (SALE.fill){ SALE.fill = 0; SALE.ready++; tablePencas.forEach(m => { m.visible = false; }); }
         else if (!SALE.leaving){ SALE.leaving = 5; toast('Caminhão carregado com ' + SALE.onTruck + (SALE.onTruck === 1 ? ' caixa' : ' caixas') + '. Venda feita!'); sfx(220, 180, .5, 'sawtooth', .05); }
       }
