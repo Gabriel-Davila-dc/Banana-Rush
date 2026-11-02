@@ -5504,7 +5504,8 @@ function floorAt(x, z){ const h = heightAt(x, z); return x > SHED_FLOOR.x0 && x 
     const total = mainT.cargo.length + SALE.pile.length + player.carry.length;
     if (!total) return false;
     SALE.on = true; SALE.refreshPile();
-    withTractor(mainT, () => { tractor.route = routeTo(DEPOT, false); tractor.state = 'saleGo'; tractor.wantT = 0; });
+    // estaciona rente ao galpão, com a carreta na frente do tanque
+    withTractor(mainT, () => { tractor.route = routeTo(DEPOT, false); tractor.route.push({x:83, z:8.7}, {x:87.6, z:8.7}); tractor.state = 'saleGo'; tractor.wantT = 0; });
     toast('Hora de vender! O trator leva a carreta até o galpão (fim da estrada, à direita). Quando ela parar lá, ponha os cachos no tanque d’água.');
     sfx(523, 784, .3, 'triangle', .08);
     return true;
