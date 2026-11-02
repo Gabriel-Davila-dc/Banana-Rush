@@ -1204,7 +1204,8 @@ function farmBare(x, z){
     if ((z > 7.4 && z < 12.6 && x > -62) || onRoad(x, z, 1.9)) continue;
     const inField = (Math.abs(x) < 23 && z > -29 && z < 7) || (x > 24 && x < 46.5 && z > -29 && z < 7) || (x < -24 && x > -46.5 && z > -29 && z < 7) || (Math.abs(x) < 22 && z > -53 && z < -31);
     if (inField) continue;
-    if (x > 76 && x < 92 && z > -2 && z < 8) continue;
+    if (x > 76 && x < 94 && z > -2 && z < 8.5) continue;
+    if (x > 56 && x < 68 && z > -4 && z < 8.6) continue; // piso da garagem dos tratores
     if (farmBare(x, z)) continue;
     q.setFromAxisAngle(new V3(0,1,0), rnd(0, 6.3)); s.set(rnd(.8, 1.5), rnd(.7, 1.6), rnd(.8, 1.5)); p.set(x, heightAt(x, z), z);
     m.compose(p, q, s); tufts.setMatrixAt(i, m);
@@ -1872,7 +1873,11 @@ function driveRoute(dt, spd){
     const target = Math.atan2(-dz, dx);
     { const ax = tractorAxisX(tractor.yaw), az = tractorAxisZ(tractor.yaw), HW = tractor.cartHalfW + .45;
       const inFront = p => { const qx = p.x - tractor.x, qz = p.z - tractor.z, lx = qx*ax.x + qz*ax.z, lz = qx*az.x + qz*az.z; return lx > 1.4 && lx < 4.6 && Math.abs(lz) < HW; };
-      const pl = inFront(player.pos), other = !pl && (tractor.waitT || 0) < 3 && [...workers, ...helpers].some(o => inFront(o.pos));
+      const npcAhead = [...workers, ...helpers].some(o => inFront(o.pos));
+      if (!npcAhead) tractor.npcWait = 0;
+      const pl = inFront(player.pos), other = !pl && npcAhead && (tractor.npcWait || 0) < 2;
+      if (other){ tractor.npcWait = (tractor.npcWait || 0) + dt; if (tractor.npcWait > 1 && !tractor.npcHonk){ tractor.npcHonk = true; if (Math.hypot(player.pos.x - tractor.x, player.pos.z - tractor.z) < 30) honk(); } } else tractor.npcHonk = false;
+      if (!pl && npcAhead && tractor.npcWait >= 2) spd *= .35; // passa devagar, o peão sai da frente
       if (pl || other){ tractor.waitT = (tractor.waitT || 0) + dt; if (pl && tractor.waitT > .8 && !tractor.honked){ tractor.honked = true; if (Math.hypot(player.pos.x - tractor.x, player.pos.z - tractor.z) < 30) honk(); } if (pl && tractor.waitT > 5 && (tractor.state === 'moving' || tractor.state === 'returning')) tractor.route.length = 0; return 0; }
       tractor.waitT = 0; tractor.honked = false;
       const me = tractor, isMain = me === mainT;
@@ -3075,7 +3080,7 @@ function updateAmbience(){
   const hot = run && !game.rain && se && /ver|prim/i.test(se.nome || '');
   amb.cic.g.gain.setTargetAtTime(0, t, .5); amb.cic.lg.gain.setTargetAtTime(hot ? .012 + .008*Math.max(0, Math.sin(now*.05)) : 0, t, 1.5);
   let best = null, bd = 1e9;
-  for (const T of allTractors()){ const d = Math.hypot(T.x - player.pos.x, T.z - player.pos.z); if (d < bd){ bd = d; best = T; } }
+  for (const T of allTractors()){ if (T.state === 'garage') continue; const d = Math.hypot(T.x - player.pos.x, T.z - player.pos.z); if (d < bd){ bd = d; best = T; } }
   const moving = !!(best && best.route && best.route.length);
   amb.engine.g.gain.setTargetAtTime(run && best ? Math.pow(clamp(1 - bd/50, 0, 1), 1.4)*(moving ? .55 : .3) : 0, t, .3);
   amb.engine.fire.frequency.setTargetAtTime(moving ? 42 : 27, t, .5); amb.engine.rat.frequency.setTargetAtTime(moving ? 168 : 108, t, .5); amb.engine.lp.frequency.setTargetAtTime(moving ? 650 : 420, t, .5);
@@ -3334,6 +3339,72 @@ const stairAt = (x, z) => STAIRS.find(S => { const u = S.ax === 'x' ? x : z, c =
     for (const b of by.values()){ const mm = new THREE.Mesh(merge(b.list), b.mat); mm.castShadow = b.cast; mm.receiveShadow = true; shed.add(mm); }
   }
 })();
+/* ---------- garagem dos tratores ---------- */
+const GARAGE = {x0:56.4, x1:67.6, z0:-3.4, z1:8.0, bays:[59.4, 64.6], z:5.6, boxes:[]}; // cabe o trator com a carreta gigante, de frente para a estrada
+(() => {
+  const G = new THREE.Group(), y0 = heightAt(62, 3);
+  const conc = M.conc || L('#a9a69d'), brick = L('#b05a36', {roughness:.9}), steel = L('#5d6266', {roughness:.5, metalness:.5}), roofM = L('#9aa0a2', {roughness:.6, metalness:.3, side:THREE.DoubleSide});
+  const add = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; G.add(m); return m; };
+  const W = GARAGE.x1 - GARAGE.x0, D = GARAGE.z1 - GARAGE.z0, cx = (GARAGE.x0 + GARAGE.x1)/2, cz = (GARAGE.z0 + GARAGE.z1)/2;
+  add(new THREE.BoxGeometry(W, .16, D), conc, cx, .04, cz);
+  // fundo de tijolo e laterais até a metade
+  add(new THREE.BoxGeometry(W, 3.2, .22), brick, cx, 1.6, GARAGE.z0 + .11); GARAGE.boxes.push([GARAGE.x0, GARAGE.x1, GARAGE.z0, GARAGE.z0 + .25]);
+  for (const x of [GARAGE.x0 + .11, GARAGE.x1 - .11]){ add(new THREE.BoxGeometry(.22, 3.2, D*.55), brick, x, 1.6, GARAGE.z0 + D*.275); GARAGE.boxes.push([x - .14, x + .14, GARAGE.z0, GARAGE.z0 + D*.55]); }
+  // pilares, vigas e telhado de uma água
+  for (const x of [GARAGE.x0 + .12, cx, GARAGE.x1 - .12]){ add(new THREE.BoxGeometry(.2, 3.6, .2), conc, x, 1.8, GARAGE.z1 - .12); GARAGE.boxes.push([x - .14, x + .14, GARAGE.z1 - .26, GARAGE.z1]); }
+  add(new THREE.BoxGeometry(W + .3, .25, .25), conc, cx, 3.6, GARAGE.z1 - .12);
+  { const r = add(new THREE.BoxGeometry(W + 1, .06, D + 1.2), roofM, cx, 3.75, cz); r.rotation.x = -.06; }
+  // divisória baixa entre as duas vagas, bancada com ferramentas, pneu e tambor
+  add(new THREE.BoxGeometry(.15, .5, 1.6), conc, cx, .3, GARAGE.z0 + .8);
+  add(new THREE.BoxGeometry(2.2, .08, .7), L('#7a5a3a', {roughness:.8}), GARAGE.x0 + 1.6, .92, GARAGE.z0 + .6);
+  for (const dx of [-1, 1]) add(new THREE.BoxGeometry(.06, .9, .6), steel, GARAGE.x0 + 1.6 + dx*1, .45, GARAGE.z0 + .6);
+  add(new THREE.BoxGeometry(.5, .25, .3), L('#b8322a', {roughness:.5}), GARAGE.x0 + 1.2, 1.08, GARAGE.z0 + .55); // caixa de ferramenta
+  GARAGE.boxes.push([GARAGE.x0, GARAGE.x0 + 2.8, GARAGE.z0, GARAGE.z0 + 1.0]);
+  { const tire = add(new THREE.TorusGeometry(.42, .16, 10, 20), L('#1c1c1c', {roughness:.9}), GARAGE.x1 - .9, .58, GARAGE.z0 + .5); tire.rotation.y = .3; }
+  { const drum = add(new THREE.CylinderGeometry(.3, .3, .9, 16), L('#2f6fb0', {roughness:.5, metalness:.3}), GARAGE.x1 - .7, .45, GARAGE.z0 + 1.5); GARAGE.boxes.push([GARAGE.x1 - 1.4, GARAGE.x1, GARAGE.z0, GARAGE.z0 + 2]); }
+  // colchonete de descanso
+  add(new THREE.BoxGeometry(.75, .06, 1.9), L('#3d6a8a', {roughness:.9}), cx, .1, 2.4);
+  G.position.y = y0; scene.add(G);
+})();
+// dia sem corte: tratores desligados na garagem e os tratoristas fazendo manutenção ou descansando
+const garageCrew = [];
+function setGarage(on){
+  allTractors().forEach((T, i) => {
+    if (on){
+      Object.assign(T, {x:GARAGE.bays[i] || GARAGE.bays[0], z:GARAGE.z, yaw:-Math.PI/2, parkYaw:-Math.PI/2, route:[], wantT:0, state:'garage', load:0, cargo:[]});
+      T.home.set(T.x, 0, T.z - T.cartOff);
+    }
+    if (T.driver) T.driver.visible = !on;
+    let c = garageCrew[i];
+    if (on && !c && T.drvLook){
+      const R = makePerson(T.drvLook.shirt, null, Object.assign({}, T.drvLook.opt)); if (R.setTool) R.setTool('none');
+      const wr = new THREE.Mesh(new THREE.BoxGeometry(.03, .03, .26), L('#9aa0a6', {roughness:.3, metalness:.8})); wr.position.set(0, 0, .12); if (R.piv) R.piv.add(wr);
+      R.g.traverse(o => { if (o.isMesh) o.castShadow = true; }); scene.add(R.g);
+      c = garageCrew[i] = {R, job:i === 0 ? 'fix' : 'rest'};
+    }
+    if (c) c.R.g.visible = on;
+  });
+}
+function updateGarageCrew(){
+  const y0 = heightAt(62, 3);
+  garageCrew.forEach((c, i) => {
+    if (!c || !c.R.g.visible) return;
+    const R = c.R, T = allTractors()[i] || mainT;
+    if (c.job === 'fix'){
+      // ajoelhado na roda da frente, com a chave de boca
+      R.g.rotation.order = 'XYZ'; R.g.rotation.set(0, -Math.PI/2, 0); R.g.position.set(T.x + 1.6, y0 + .1, T.z + 1.25);
+      walkPose(R, 0, {crouch:.55});
+      if (R.piv){ R.piv.rotation.x = .9 + Math.sin(now*5)*.35; R.piv.rotation.y = .1; }
+      if (R.armL){ R.armL.rotation.x = -.9; R.armL.rotation.z = .2; }
+    } else {
+      // deitado de costas no colchonete, mãos na barriga
+      R.g.rotation.order = 'YXZ'; R.g.rotation.set(-Math.PI/2, Math.PI, 0); R.g.position.set((GARAGE.x0 + GARAGE.x1)/2, y0 + .26, 3.3);
+      walkPose(R, 0, {});
+      if (R.U) R.U.rotation.x = Math.sin(now*1.1)*.015;
+      if (R.armL){ R.armL.rotation.x = -.5; R.armL.rotation.z = .5; } if (R.piv){ R.piv.rotation.x = .5; R.piv.rotation.y = -.5; }
+    }
+  });
+}
 /* ---------- paisagem de Santa Catarina ---------- */
 const SERRA = [], fogSprites = [];
 let fallsTex = null;
@@ -3662,7 +3733,7 @@ function buildTractorDetails(shirt, opt){
     const logo = new THREE.Mesh(new THREE.CircleGeometry(.03, 14), L('#ffde00'));
     logo.position.set(0, .2, .134); logo.rotation.x = -.35; drv.Hs.add(logo);
   }
-  tractor.grp.add(drv.g); tractor.driver = drv.g;
+  tractor.grp.add(drv.g); tractor.driver = drv.g; tractor.drvLook = {shirt, opt};
   // faixa amarela no capô
   const yel = L('#ffde00');
   for (const z of [-.455, .455]){ const st = new THREE.Mesh(new THREE.BoxGeometry(1.6, .05, .012), yel); st.position.set(.8, 1.36, z); tractor.grp.add(st); }
@@ -3682,6 +3753,12 @@ function buildTractorDetails(shirt, opt){
 }
 function updateTractor(dt, follow, isMain){
   const tspd = (3.2 + .6*save.lv.carreta)*(save.lv.trator >= 1 ? 1.4 : 1); // trator lento, mais devagar que o colhedor a pé
+  if (tractor.state === 'garage'){
+    if (tractor.look) tractor.look.beacon.material.color.setHex(0x4a2a00);
+    tractor.grp.position.set(tractor.x, heightAt(tractor.x, tractor.z) + .1, tractor.z); tractor.grp.rotation.set(0, tractor.yaw, 0);
+    syncCargo(); { const solid = tractorFade > .6; tractor.loadMeshes.forEach(h => { h.visible = false; }); }
+    tractor.behind = false; return;
+  }
   if (tractor.look){ tractor.look.beacon.material.color.setHex(Math.sin(now*9) > 0 ? 0xffa21f : 0x4a2a00); }
   let tdx = 0;
   const nearT = save.lv.trator >= 3;
@@ -3954,7 +4031,22 @@ function restPose(R, type){
 }
 const SIT_DROP = .03, STOOL_DROP = .32, CRATE_DROP = .2; // duas caixas plásticas: assento a 60 cm // banquinho de 47 cm: o quadril desce até o assento
 // ninguém atravessa ninguém: pessoas que encostam são empurradas para os lados (quem está parado no posto não sai do lugar)
+function pushOutOfTractors(p){
+  for (const T of allTractors()){
+    const ax = tractorAxisX(T.yaw), az = tractorAxisZ(T.yaw), dx = p.x - T.x, dz = p.z - T.z;
+    let lx = dx*ax.x + dz*ax.z, lz = dx*az.x + dz*az.z; const B = T.cartBack + .3, HW = T.cartHalfW + .3, Fr = 2.4;
+    // trator andando: quem está no caminho logo à frente vai saindo para o lado mais perto
+    if (T.route && T.route.length && lx > 1.5 && lx < Fr + 3 && Math.abs(lz) < HW){ const sd = Math.sign(lz) || 1; lz += sd*Math.min(HW - Math.abs(lz), .09); p.x = T.x + ax.x*lx + az.x*lz; p.z = T.z + ax.z*lx + az.z*lz; continue; }
+    if (lx > -B && lx < Fr && lz > -HW && lz < HW){
+      const o = lx > 0 ? [0, 'z', (Math.sign(lz) || 1)*HW] : [[lx + B, 'x', -B], [Fr - lx, 'x', Fr], [lz + HW, 'z', -HW], [HW - lz, 'z', HW]].sort((a, b) => a[0] - b[0])[0]; // na frente do trator: sai pelo lado
+      if (o[1] === 'x') lx = o[2]; else lz = o[2];
+      p.x = T.x + ax.x*lx + az.x*lz; p.z = T.z + ax.z*lx + az.z*lz;
+    }
+  }
+}
 function separatePeople(){
+  for (const w of workers) pushOutOfTractors(w.pos);
+  for (const h of helpers) if (h.state !== 'carry') pushOutOfTractors(h.pos);
   const list = [{p:player.pos, w:1}];
   for (const w of workers) list.push({p:w.pos, w:1});
   for (const h of helpers) list.push({p:h.pos, w:1});
@@ -4266,7 +4358,7 @@ function resetDay(){
   player.stam = 1; player.tired = false;
   resetMonkey();
   overnight();
-  setupMission();
+  setupMission(); setGarage(!!game.mis);
   if (game.mis) game.order = null;
 }
 
@@ -4501,9 +4593,11 @@ function pushOut(p){
   if (p.z <= 13.4){
     if (p.z > 12.9 && !gate) p.z = 12.9;
     const xl = save.lv.terra >= 2 ? -46.5 : -21.5, xr = save.lv.terra >= 1 ? 46.5 : 21.5, zb = save.lv.terra >= 3 ? -53 : -28.5;
-    const ok = (x, z) => z <= 13.4 && x >= xl && ((x <= xr && z >= zb) || (z >= 6.6 && x <= 104) || (x >= 75.5 && x <= 104 && z >= -1.6));
+    const ok = (x, z) => z <= 13.4 && x >= xl && ((x >= 50 && x <= 75.5 && z >= -2.6) || (x <= xr && z >= zb) || (z >= 6.6 && x <= 104) || (x >= 75.5 && x <= 104 && z >= -1.6));
     const L0 = pushOut.last || (pushOut.last = {x:2, z:6.5});
     if (!ok(p.x, p.z)){ if (ok(L0.x, p.z)) p.x = L0.x; else if (ok(p.x, L0.z)) p.z = L0.z; else { p.x = clamp(L0.x, xl, 104); p.z = Math.max(L0.z, zb); } }
+    if (p.x > 52 && p.x < 70) for (const b of GARAGE.boxes){ const r = .35;
+      if (p.x > b[0] - r && p.x < b[1] + r && p.z > b[2] - r && p.z < b[3] + r){ const o = [[p.x - (b[0] - r), 'x', b[0] - r], [(b[1] + r) - p.x, 'x', b[1] + r], [p.z - (b[2] - r), 'z', b[2] - r], [(b[3] + r) - p.z, 'z', b[3] + r]].sort((a, c) => a[0] - c[0])[0]; p[o[1]] = o[2]; } }
     if (p.x > 70){
       saleSolids(p);
       // só sobe e desce da plataforma pela escada
@@ -4763,7 +4857,7 @@ function update(dt){
     }
   }
   updateCritters(dt);
-  updatePollen(dt); updateFarm(dt); SALE.update(dt);
+  updatePollen(dt); updateFarm(dt); SALE.update(dt); updateGarageCrew();
   updateSeason(dt);
   updateAmbience();
   if (game.running){ autoSaveT += dt; if (autoSaveT > 10){ autoSaveT = 0; saveField(); persist(); } }
