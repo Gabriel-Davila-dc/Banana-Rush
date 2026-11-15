@@ -801,6 +801,31 @@ groundify(M.field, 4.0, '0.82, 0.76, 0.7', 'gfield'); M.field.normalMap = FIELD.
 groundify(M.coroa, 3.0, '0.8, 0.74, 0.68', 'gcoroa'); M.coroa.normalMap = COROA.nrm; M.coroa.normalScale = new THREE.Vector2(1.2, 1.2); M.coroa.roughness = 1;
 groundify(M.grass, 3.4, '1.1, 1.05, 0.82', 'ggrass'); M.grass.normalMap = GRASS.nrm; M.grass.normalScale = new THREE.Vector2(.9, .9); M.grass.roughness = .95;
 M.road.normalMap = roadNrm; M.road.normalScale = new THREE.Vector2(1.1, 1.1); M.road.roughness = .97;
+// lado da estrada (1 = uma margem, 2 = a outra; 0 = sem margem) vai para o shader: a borda se mistura com o capim e aparecem as trilhas dos pneus
+function roadSide(g, acrossX){ const uv = g.attributes.uv, a = new Float32Array(uv.count); for (let i=0;i<uv.count;i++) a[i] = 1 + (acrossX ? uv.getX(i) : uv.getY(i)); g.setAttribute('rside', new THREE.BufferAttribute(a, 1)); return g; }
+function roadify(mat){
+  const prev = mat.onBeforeCompile, key = mat.customProgramCacheKey ? mat.customProgramCacheKey() : 'road';
+  mat.transparent = true; mat.defaultAttributeValues = {rside:[0]};
+  mat.onBeforeCompile = (sh, r) => {
+    if (prev && prev !== roadify.none) prev(sh, r);
+    sh.vertexShader = 'attribute float rside;\nvarying float vRS;\nvarying vec2 vRW;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vRS = rside; vRW = (modelMatrix*vec4(position, 1.0)).xz;');
+    sh.fragmentShader = 'varying float vRS;\nvarying vec2 vRW;\nfloat rH(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7)))*43758.5453); }\nfloat rN(vec2 p){ vec2 i = floor(p), f = fract(p), u = f*f*(3.0 - 2.0*f); return mix(mix(rH(i), rH(i + vec2(1.0, 0.0)), u.x), mix(rH(i + vec2(0.0, 1.0)), rH(i + vec2(1.0, 1.0)), u.x), u.y); }\n' +
+      sh.fragmentShader.replace('#include <alphamap_fragment>', `if (vRS > 0.5){
+    float e = abs(clamp(vRS - 1.0, 0.0, 1.0) - 0.5)*2.0;
+    float ed = e + rN(vRW*0.8)*0.24 + rN(vRW*3.3)*0.1 - 0.12;
+    diffuseColor.a *= 1.0 - smoothstep(0.64, 0.98, ed);
+    float rut = exp(-pow((e - 0.44)/0.11, 2.0));
+    diffuseColor.rgb *= 1.0 - 0.24*rut*(0.55 + 0.45*rN(vRW*1.7));
+    diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb*vec3(0.86, 0.8, 0.7), smoothstep(0.42, 0.9, ed)*0.5);
+    diffuseColor.rgb *= 0.93 + 0.12*rN(vRW*0.35);
+  }
+  #include <alphamap_fragment>`);
+  };
+  mat.customProgramCacheKey = () => key + '|rs';
+  mat.needsUpdate = true;
+}
+roadify.none = null;
+roadify(M.road);
 M.sucker.map = suckerTex; M.sucker.color = C('#f2fbe6'); M.sucker.emissive = C('#ffffff'); M.sucker.emissiveMap = suckerTex; M.sucker.emissiveIntensity = .1; M.sucker.roughness = .55;
 M.ao = new THREE.MeshBasicMaterial({map:aoTex, transparent:true, depthWrite:false, polygonOffset:true, polygonOffsetFactor:-2});
 
@@ -1165,18 +1190,18 @@ grassTex.repeat.set(190, 190);
 const field = new THREE.Mesh(drape(new THREE.PlaneGeometry(46, 36, 46, 36).rotateX(-Math.PI/2), 0, -11, .035), M.field);
 field.position.set(0, 0, -11); field.receiveShadow = true; scene.add(field);
 roadTex.repeat.set(52, 1);
-const road = new THREE.Mesh(drape(new THREE.PlaneGeometry(190, 4.4, 190, 3).rotateX(-Math.PI/2), 35, 10, .06), M.road);
+const road = new THREE.Mesh(drape(roadSide(new THREE.PlaneGeometry(190, 4.6, 190, 4).rotateX(-Math.PI/2)), 35, 10, .06), M.road);
 road.position.set(35, 0, 10); road.receiveShadow = true; scene.add(road);
 for (const ln of HLINES.slice(1)){
   const len = ln.x1 - ln.x0, t = roadTex.clone(); t.needsUpdate = true; t.repeat.set(len/3.6, .75);
   const cx = (ln.x0 + ln.x1)/2;
-  const m = new THREE.Mesh(drape(new THREE.PlaneGeometry(len, 3.2, Math.ceil(len), 3).rotateX(-Math.PI/2), cx, ln.z, .065), M.road);
+  const m = new THREE.Mesh(drape(roadSide(new THREE.PlaneGeometry(len, 3.4, Math.ceil(len), 4).rotateX(-Math.PI/2)), cx, ln.z, .065), M.road);
   m.position.set(cx, 0, ln.z); m.receiveShadow = true; scene.add(m);
 }
 for (const v of VLINES){
   const len = v.z1 - v.z0, t = roadTex.clone(); t.needsUpdate = true; t.repeat.set(len/3.6, .75);
   const cz = (v.z0 + v.z1)/2;
-  const m = new THREE.Mesh(drape(new THREE.PlaneGeometry(len, 3.2, Math.ceil(len), 3).rotateZ(Math.PI/2).rotateX(-Math.PI/2), v.x, cz, .07), M.road);
+  const m = new THREE.Mesh(drape(roadSide(new THREE.PlaneGeometry(len, 3.4, Math.ceil(len), 4).rotateZ(Math.PI/2).rotateX(-Math.PI/2)), v.x, cz, .07), M.road);
   m.position.set(v.x, 0, cz); m.receiveShadow = true; scene.add(m);
 }
 
@@ -1185,7 +1210,8 @@ function farmBare(x, z){
   if (z < 13 || z > 46.5 || Math.abs(x) > 42.5) return false;
   const inR = (x0, x1, z0, z1) => x > x0 && x < x1 && z > z0 && z < z1;
   return inR(-1.2, 1.6, 13, 36) || inR(-13.5, 30.8, 28.5, 30.5) || inR(-6.2, 6.2, 34.6, 45.2) || inR(-26.2, -13, 34.8, 44.7) || Math.hypot(x - 4.5, z - 18) < 1.3 || inR(5.5, 6.8, 17.9, 19.3)
-    || inR(7.6, 18.9, 15.8, 25.9) || inR(23.6, 33.4, 15.8, 24.4) || ((x - 33)/7.6)**2 + ((z - 38)/5.3)**2 < 1;
+    || inR(7.6, 18.9, 15.8, 25.9) || inR(23.6, 33.4, 15.8, 24.4) || ((x - 33)/7.6)**2 + ((z - 38)/5.3)**2 < 1
+    || inR(-13.7, -8.3, 13.8, 18.9) || inR(-13.7, -7.1, 20.1, 27.1) || inR(-28, -19.5, 33.2, 35.6) || inR(-33.2, -27, 33.4, 37.6) || inR(6.4, 8.3, 33.9, 35.9);
 }
 // estradinha até a vila, rua e quintais da frente sem capim
 const villageBare = (x, z) => (Math.abs(x - 50.5) < 1.7 && z < 9 && z > -56) || (x > 11.5 && x < 60.5 && z > -66 && z < -52.6);
@@ -5466,7 +5492,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && !no
   const ld = (file, srgb, cb) => TL.load(A + file, t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = ANISO; if (srgb) t.encoding = THREE.sRGBEncoding; cb(t); }, undefined, () => console.warn('arquivo não encontrado:', file));
   // chão fotografado: troca a textura pintada pela foto (continua na coordenada do mundo, misturando duas escalas)
   const photo = (mat, id, size, tint, key, nScale = 1, sat = 1) => {
-    let got = 0; const done = () => { if (++got < 2) return; groundify(mat, size, tint, key, sat); mat.needsUpdate = true; };
+    let got = 0; const done = () => { if (++got < 2) return; groundify(mat, size, tint, key, sat); if (mat === M.road) roadify(mat); mat.needsUpdate = true; };
     ld('tex/' + id + '_diff.jpg', true, t => { mat.map = t; done(); });
     ld('tex/' + id + '_nor.jpg', false, t => { mat.normalMap = t; mat.normalScale = new THREE.Vector2(nScale, nScale); done(); });
   };
@@ -5579,7 +5605,7 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
   };
   plankTex.wrapS = plankTex.wrapT = barnTex.wrapS = barnTex.wrapT = wallTex.wrapS = wallTex.wrapT = THREE.RepeatWrapping;
   const path = (x0, z0, x1, z1, w) => { const len = Math.hypot(x1 - x0, z1 - z0), cx = (x0 + x1)/2, cz = (z0 + z1)/2, ang = Math.atan2(x1 - x0, z1 - z0);
-    const g = new THREE.PlaneGeometry(w, len, 2, Math.ceil(len)).rotateX(-Math.PI/2).rotateY(ang); mesh(drape(g, cx, cz, .045), M.road, cx, 0, cz, false); };
+    const g = roadSide(new THREE.PlaneGeometry(w + .6, len + .4, 4, Math.ceil(len*1.4)).rotateX(-Math.PI/2).rotateY(ang), true); const m = new THREE.Mesh(drape(g, cx, cz, .075), M.road); m.position.set(cx, 0, cz); m.receiveShadow = true; scene.add(m); };
   // telhado de duas águas: cumeeira ao longo de x (along = 'x') ou de z
   const gableRoof = (cx, cz, W, D, y, rise, mat, along, over = .5) => {
     const half = along === 'x' ? D/2 : W/2, len = (along === 'x' ? W : D) + over*2, RL = Math.hypot(half + over, rise*(1 + over/half)), ang = Math.atan2(rise, half);
@@ -6191,40 +6217,99 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
       const bl = mesh(new THREE.BoxGeometry(.14, .1, .015), M.metal, CEPO.x - .03, y + .54, CEPO.z); bl.rotation.z = -.5;
       mesh(new THREE.CylinderGeometry(.16, .12, .26, 12), M.metal, CEPO.x - .1, y + .13, CEPO.z + .55);
       FARM.circles.push([CEPO.x, CEPO.z, .36]); }
-    const abKind = () => { const t = animalsOf('turkey').length, r = animalsOf('rooster').length; return !t && !r ? null : t >= r ? 'turkey' : 'rooster'; };
-    FARM.stations.push({x:CEPO.x, z:CEPO.z, r:1.5, btn:'Abater', when:() => !!abKind(),
-      ready:() => !FARM.held && !player.carry.length,
-      hint:() => FARM.held || player.carry.length ? 'Mãos ocupadas' : 'abater e limpar um ' + (abKind() === 'turkey' ? 'peru' : 'galo') + ' para assar no forno', act:() => abate(abKind())});
+    const cepoAt = (x, z, kind, nome) => {
+      if (x !== CEPO.x){ const y = gy(x, z), wood = L('#8a6a45', {roughness:.9});
+        mesh(new THREE.CylinderGeometry(.3, .34, .5, 14), FM.bark, x, y + .25, z); mesh(new THREE.CylinderGeometry(.29, .29, .02, 14), wood, x, y + .51, z);
+        const hd = mesh(new THREE.CylinderGeometry(.018, .02, .42, 6), wood, x + .05, y + .66, z); hd.rotation.z = -.5;
+        const bl = mesh(new THREE.BoxGeometry(.14, .1, .015), M.metal, x - .03, y + .54, z); bl.rotation.z = -.5;
+        FARM.circles.push([x, z, .36]); }
+      FARM.stations.push({x, z, r:1.5, btn:'Abater', when:() => animalsOf(kind).length > 0,
+        ready:() => !FARM.held && !player.carry.length,
+        hint:() => FARM.held || player.carry.length ? 'Mãos ocupadas' : 'abater e limpar um ' + nome + ' para assar no forno', act:() => abate(kind)});
+    };
+    cepoAt(CEPO.x, CEPO.z, 'rooster', 'galo');
+    cepoAt(36.2, 24.2, 'turkey', 'peru');
 
-    // ---------- palanque do cavalo, perto da porteira ----------
-    const HPOST = {x:-6.5, z:16.5};
-    { const y = gy(HPOST.x, 15.3); for (const dx of [-1, 1]) mesh(new THREE.BoxGeometry(.14, 1.2, .14), FM.post, HPOST.x + dx, y + .55, 15.3); mesh(new THREE.BoxGeometry(2.3, .1, .1), FM.rail, HPOST.x, y + 1.02, 15.3); FARM.circles.push([HPOST.x - 1, 15.3, .12], [HPOST.x + 1, 15.3, .12]); }
+    // ---------- estrebaria do cavalo (aberta para o terreiro) ----------
+    const HPOST = {x:-10.9, z:16.3, yaw:Math.PI/2};
+    { const x0 = -13.4, x1 = -8.6, z0 = 14.1, z1 = 18.6, y = base(x0, x1, z0, z1), H = 2.5;
+      mesh(drape(new THREE.PlaneGeometry(x1 - x0 - .2, z1 - z0 - .2, 6, 6).rotateX(-Math.PI/2), (x0 + x1)/2, (z0 + z1)/2, .05), FM.hay, (x0 + x1)/2, 0, (z0 + z1)/2, false);
+      mesh(uvScale(new THREE.BoxGeometry(.14, H, z1 - z0), (z1 - z0)/2, H/2), FM.plank, x0, y + H/2, (z0 + z1)/2);
+      for (const zz of [z0, z1]) mesh(uvScale(new THREE.BoxGeometry(x1 - x0, H*.62, .14), (x1 - x0)/2, H*.31), FM.plank, (x0 + x1)/2, y + H*.31, zz);
+      for (const zz of [z0, z1]) mesh(new THREE.BoxGeometry(.16, H + .2, .16), FM.post, x1, y + (H + .2)/2, zz);
+      const rf = mesh(uvScale(new THREE.BoxGeometry(x1 - x0 + .9, .1, z1 - z0 + .6), 3, 2.4), FM.roof, (x0 + x1)/2 + .2, y + H + .3, (z0 + z1)/2); rf.rotation.z = .12;
+      mesh(new THREE.BoxGeometry(.5, .5, 1.6), FM.plank, x0 + .35, y + 1.3, 16.3); mesh(new THREE.BoxGeometry(.4, .3, 1.5), FM.hay, x0 + .35, y + 1.6, 16.3);
+      mesh(new THREE.CylinderGeometry(.25, .22, .35, 12), M.metal, x0 + .5, y + .18, 17.8); mesh(new THREE.CylinderGeometry(.23, .23, .02, 12), FM.water, x0 + .5, y + .34, 17.8);
+      solid(x0 - .1, x0 + .1, z0, z1); solid(x0, x1, z0 - .08, z0 + .08); solid(x0, x1, z1 - .08, z1 + .08); }
+
+    // ---------- viveiro do pavão: tela alta com teto, poleiro e casinha ----------
+    const AV = {x0:-13.4, x1:-7.4, z0:20.4, z1:26.8};
+    wireFence(AV.x0, AV.x1, AV.z0, AV.z1, 2.6);
+    { const t = meshTex.clone(); t.needsUpdate = true; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set((AV.x1 - AV.x0)/.5, (AV.z1 - AV.z0)/.5);
+      const roof = new THREE.Mesh(new THREE.PlaneGeometry(AV.x1 - AV.x0, AV.z1 - AV.z0).rotateX(-Math.PI/2), new THREE.MeshStandardMaterial({map:t, transparent:true, alphaTest:.3, side:THREE.DoubleSide, roughness:.6, metalness:.3}));
+      roof.position.set((AV.x0 + AV.x1)/2, base(AV.x0, AV.x1, AV.z0, AV.z1) + 2.62, (AV.z0 + AV.z1)/2); scene.add(roof);
+      const y = gy(-10.4, 22.2); for (const px of [-12, -9.2]) mesh(new THREE.CylinderGeometry(.05, .06, 1.3, 7), FM.bark, px, y + .65, 22.2);
+      const pr = mesh(new THREE.CylinderGeometry(.04, .04, 3, 7), FM.bark, -10.6, y + 1.25, 22.2); pr.rotation.z = Math.PI/2;
+      const hy = gy(-12.5, 26); mesh(uvScale(new THREE.BoxGeometry(1.3, 1.1, 1.1), 1, 1), FM.plank, -12.55, hy + .55, 26); const hr = mesh(new THREE.BoxGeometry(1.5, .08, 1.35), FM.roof, -12.55, hy + 1.16, 26); hr.rotation.x = -.15;
+      mesh(new THREE.PlaneGeometry(.45, .5), FM.dark, -11.89, hy + .38, 26, false).rotation.y = Math.PI/2;
+      mesh(drape(new THREE.PlaneGeometry(AV.x1 - AV.x0 - .2, AV.z1 - AV.z0 - .2, 6, 6).rotateX(-Math.PI/2), (AV.x0 + AV.x1)/2, (AV.z0 + AV.z1)/2, .04), L('#9c8458', {roughness:1}), (AV.x0 + AV.x1)/2, 0, (AV.z0 + AV.z1)/2, false); }
+
+    // ---------- cercado dos perus, com abrigo ----------
+    const TP = {x0:34.6, x1:41.2, z0:15, z1:22.8};
+    wireFence(TP.x0, TP.x1, TP.z0, TP.z1, 1.3);
+    { const y = base(38.4, TP.x1, 20.6, TP.z1); for (const px of [38.5, 40.9]) for (const pz of [20.8, 22.55]) mesh(new THREE.BoxGeometry(.1, 2, .1), FM.post, px, y + 1, pz);
+      mesh(uvScale(new THREE.BoxGeometry(2.5, 1.1, .08), 2, 1), FM.plank, 39.7, y + .55, 22.55);
+      const r = mesh(uvScale(new THREE.BoxGeometry(2.9, .08, 2.3), 1.4, 1.1), FM.roof, 39.7, y + 2.02, 21.7); r.rotation.x = .16;
+      mesh(uvScale(new THREE.BoxGeometry(1.6, .25, .4), 1, 1), FM.plank, 36.4, gy(36.4, 16) + .13, 15.9); mesh(new THREE.BoxGeometry(1.4, .04, .3), FM.corn, 36.4, gy(36.4, 16) + .27, 15.9); }
+
+    // ---------- curral dos touros, atrás do paiol ----------
+    const CU = {x0:-41.4, x1:-33.4, z0:33.2, z1:44.8};
+    railFence(CU.x0, CU.x1, CU.z0, CU.z1, 4, 1.45);
+    { const y = base(-41, -37.2, 41.4, 44.4); for (const [px, pz] of [[-41, 41.4], [-41, 44.4], [-37.2, 41.4], [-37.2, 44.4]]) mesh(new THREE.BoxGeometry(.16, 2.5, .16), FM.post, px, y + 1.2, pz);
+      const r = mesh(uvScale(new THREE.BoxGeometry(4.6, .1, 3.8), 2.3, 1.9), FM.roof, -39.1, y + 2.45, 42.9); r.rotation.x = .14;
+      for (const [hx, hz] of [[-40.3, 43.9], [-39, 44]]) mesh(uvScale(new THREE.BoxGeometry(1.1, .5, .6), 1.4, 1), FM.hay, hx, gy(hx, hz) + .25, hz);
+      { const x = -34.1, z = 37.4, yy = gy(x, z); mesh(uvScale(new THREE.BoxGeometry(.6, .5, 2.2), 1, 2), FM.plank, x, yy + .25, z); mesh(new THREE.BoxGeometry(.46, .1, 2), FM.hay, x, yy + .5, z); }
+      { const x = -34.1, z = 41, yy = gy(x, z); mesh(uvScale(new THREE.BoxGeometry(.6, .45, 1.6), 1, 1.5), FM.stone, x, yy + .22, z); mesh(new THREE.BoxGeometry(.46, .02, 1.45), FM.water, x, yy + .44, z, false); } }
+    path(-20, 34.6, -27.5, 34.1, 1.6); path(-27.5, 34.1, -32.4, 36.6, 1.6);
+
+    // ---------- casinha do cachorro, ao lado da casa ----------
+    const DOGH = {x:7.3, z:34.9};
+    { const y = gy(DOGH.x, DOGH.z), wood = L('#a8743f', {roughness:.85});
+      mesh(uvScale(new THREE.BoxGeometry(1, .7, 1.1), 1, 1), wood, DOGH.x, y + .35, DOGH.z);
+      for (const sd of [-1, 1]){ const r = mesh(new THREE.BoxGeometry(.66, .06, 1.25), FM.roof, DOGH.x + sd*.27, y + .86, DOGH.z); r.rotation.z = -sd*.62; }
+      const gs = new THREE.Shape(); gs.moveTo(-.5, 0); gs.lineTo(.5, 0); gs.lineTo(0, .38); gs.closePath(); for (const zz of [DOGH.z - .56, DOGH.z + .5]) mesh(new THREE.ExtrudeGeometry(gs, {depth:.06, bevelEnabled:false}), wood, DOGH.x, y + .7, zz);
+      mesh(new THREE.PlaneGeometry(.38, .46), FM.dark, DOGH.x, y + .3, DOGH.z - .565, false).rotation.y = Math.PI;
+      const bw = mesh(new THREE.CylinderGeometry(.15, .11, .08, 14), L('#c23a2e', {roughness:.5}), DOGH.x - .95, y + .04, DOGH.z - .55); mesh(new THREE.CylinderGeometry(.12, .12, .02, 12), L('#8a5a2a'), DOGH.x - .95, y + .08, DOGH.z - .55);
+      FARM.circles.push([DOGH.x, DOGH.z, .62]); }
 
     // ---------- cria/remove os bichos conforme a compra ----------
     const unspawn = a => { scene.remove(a.g); FARM.animals.splice(FARM.animals.indexOf(a), 1); if (a.st){ const i = FARM.stations.indexOf(a.st); if (i >= 0) FARM.stations.splice(i, 1); } };
-    const addPeacock = () => { const a = makePeacock(); pen(a, -12.5, -2.5, 16.2, 27.5); a.gk = 'hen'; a.pi = animalsOf('peacock').length - 1; a.penaDay = (save.penas || [])[a.pi]; if (a.penaDay === save.day) [3, 12, 21].forEach(i => { a.feathers[i].visible = false; });
-      a.st = {get x(){ return a.x; }, get z(){ return a.z; }, r:1.7, btn:'Penas',
-        ready:() => a.penaDay !== save.day,
-        hint:() => a.penaDay === save.day ? 'O pavão já deu penas hoje (amanhã nascem de novo)' : 'tirar 3 penas do pavão',
-        act:() => { a.penaDay = save.day; if (!save.penas) save.penas = []; save.penas[a.pi] = save.day; save.inv.pena = (save.inv.pena || 0) + 3; persist(); gainXp(5); player.crouchT = .4; [3, 12, 21].forEach(i => { a.feathers[i].visible = false; }); peaCall();
+    const addPeacock = () => { const a = makePeacock(); pen(a, -12.6, -8.2, 21.2, 25.2); a.gk = 'hen'; a.pi = animalsOf('peacock').length - 1; a.penaDay = (save.penas || [])[a.pi]; if (a.penaDay === save.day) [3, 12, 21].forEach(i => { a.feathers[i].visible = false; });
+      a.pluck = () => { a.penaDay = save.day; if (!save.penas) save.penas = []; save.penas[a.pi] = save.day; save.inv.pena = (save.inv.pena || 0) + 3; persist(); gainXp(5); player.crouchT = .4; [3, 12, 21].forEach(i => { a.feathers[i].visible = false; }); peaCall();
           for (let i=0;i<5;i++) spawnPart(featherMat, featBitGeo, new V3(a.x, .5, a.z), new V3(rnd(-1, 1), rnd(1, 2), rnd(-1, 1)), 1.4);
-          a.fanT = 0; a.wait = 0; a.tx = clamp(a.x + (a.x - player.pos.x)*3, -12.5, -2.5); a.tz = clamp(a.z + (a.z - player.pos.z)*3, 16.2, 27.5); a.hurry = 3.2;
-          float('+3 penas de pavão (venda no mercado da vila)', new V3(a.x, 1.8, a.z), '#9fd8ff'); }};
-      FARM.stations.push(a.st); };
+          a.fanT = 0; a.wait = 0; a.tx = rnd(-12.6, -9.5); a.tz = rnd(21.2, 25.2); a.hurry = 3.2;
+          float('+3 penas de pavão (venda no mercado da vila)', new V3(-7.2, 1.8, 23.6), '#9fd8ff'); }; };
+    // porta do viveiro
+    { const y = gy(-7.35, 23.6); for (const dz of [-.55, .55]) mesh(new THREE.BoxGeometry(.1, 2.2, .1), FM.rail, -7.3, y + 1.1, 23.6 + dz); mesh(new THREE.BoxGeometry(.1, .1, 1.2), FM.rail, -7.3, y + 2.2, 23.6); }
+    const peaFree = () => animalsOf('peacock').filter(a => a.penaDay !== save.day);
+    FARM.stations.push({x:-6.6, z:23.6, r:1.6, btn:'Penas', when:() => animalsOf('peacock').length > 0,
+      ready:() => peaFree().length > 0,
+      hint:() => peaFree().length ? 'tirar 3 penas do pavão pela porta do viveiro' : 'Os pavões já deram penas hoje (amanhã nascem de novo)',
+      act:() => { const a = peaFree()[0]; if (a) a.pluck(); }});
     B.sync = () => {
-      for (const [kind, key, make, pb] of [['peacock', 'pavao', addPeacock], ['turkey', 'peru', () => { const a = makeTurkey(); pen(a, 9.1, 13.4, 17.3, 24.4); }], ['rooster', 'galo', () => { const a = makeRooster(); pen(a, 8.6, 13.8, 16.8, 24.9); }]]){
+      for (const [kind, key, make, pb] of [['peacock', 'pavao', addPeacock], ['turkey', 'peru', () => { const a = makeTurkey(); pen(a, TP.x0 + .7, TP.x1 - .7, TP.z0 + .7, 20.6); }], ['rooster', 'galo', () => { const a = makeRooster(); pen(a, 8.6, 13.8, 16.8, 24.9); }]]){
         let have = animalsOf(kind);
         while (have.length < own(key)){ make(); have = animalsOf(kind); }
         while (have.length > own(key)){ unspawn(have[have.length - 1]); have = animalsOf(kind); }
       }
       { const want = (save.touros || []).slice().sort((a, b) => a - b), have = animalsOf('bull');
-        if (have.map(a => a.born).sort((a, b) => a - b).join() !== want.join()){ have.forEach(unspawn); for (const born of want){ const a = makeBull(born); pen(a, -38.6, -18.2, 17.4, 30); a.gk = 'cow'; } }
+        if (have.map(a => a.born).sort((a, b) => a - b).join() !== want.join()){ have.forEach(unspawn); for (const born of want){ const a = makeBull(born); pen(a, CU.x0 + 1.2, CU.x1 - 1.2, CU.z0 + 1.2, CU.z1 - 1.3); a.gk = 'cow'; } }
         for (const a of animalsOf('bull')) a.g.scale.setScalar(bullScale(a.born)); }
-      if (own('cavalo') && !B.horse){ const m = makeHorse(); scene.add(m.g); B.horse = {a:m, x:HPOST.x, z:HPOST.z, yaw:Math.PI, ph:0, spd:0};
+      if (own('cavalo') && !B.horse){ const m = makeHorse(); scene.add(m.g); B.horse = {a:m, x:HPOST.x, z:HPOST.z, yaw:HPOST.yaw, ph:0, spd:0};
         FARM.stations.push({get x(){ return B.horse.x; }, get z(){ return B.horse.z; }, r:2.1, btn:'Montar', when:() => !player.horse,
           ready:() => !player.carry.length && !FARM.held, hint:() => player.carry.length || FARM.held ? 'Solte o que está carregando para montar' : 'montar no cavalo',
           act:() => B.mount()}); }
-      if (own('cachorro') && !B.dog){ const m = makeDog(); scene.add(m.g); B.dog = {a:m, x:player.pos.x - 1.2, z:player.pos.z + 1, yaw:0, ph:0, sp:0, barkT:0}; m.g.position.set(B.dog.x, heightAt(B.dog.x, B.dog.z), B.dog.z); }
+      if (own('cachorro') && !B.dog){ const m = makeDog(); scene.add(m.g); B.dog = {a:m, x:DOGH.x, z:DOGH.z - .95, yaw:Math.PI, ph:0, sp:0, barkT:0, lie:1}; m.g.position.set(B.dog.x, heightAt(B.dog.x, B.dog.z), B.dog.z); }
     };
 
     // ---------- montar e descer ----------
@@ -6361,7 +6446,7 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
     window.addEventListener('keydown', e => { if (B.mktOpen && (e.code === 'Escape' || e.code === 'KeyE')){ e.preventDefault(); B.closeMkt(); } });
 
     // ---------- turistas: chegam pela estrada, pagam o ingresso na porteira e passeiam ----------
-    const VR = [[-72, 12.3], [-20, 12.3], [.2, 12.3], [.2, 14.8, 1.5, 0, 22, 'pay'], [.2, 22], [.2, 29.5], [-11.5, 29.5, 6, -24, 23], [.2, 29.5], [19, 29.5, 6, 14, 21], [26.5, 31.2, 5, 33, 38], [.2, 30.5], [.2, 33.4, 4, 0, 40], [.2, 22, 5, -7, 21], [.2, 14.8], [.2, 12.3], [-76, 12.3]];
+    const VR = [[-72, 12.3], [-20, 12.3], [.2, 12.3], [.2, 14.8, 1.5, 0, 22, 'pay'], [-5.4, 16.3, 4, -11, 16.3], [-5.4, 23.6, 5, -10.5, 23.6], [-5.4, 28.6], [-11.5, 29.5, 5, -24, 23], [-20, 34.6], [-27.5, 34.2], [-31.6, 36.9, 6, -37.5, 39], [-27.5, 34.2], [-20, 34.6], [-11.5, 29.5], [.2, 29.5], [19, 29.5, 5, 14, 21], [31, 26.8, 5, 37.8, 19], [26.5, 31.2, 5, 33, 38], [.2, 30.5], [.2, 33.4, 4, 3, 38], [.2, 14.8], [.2, 12.3], [-76, 12.3]];
     const VLOOK = [['#e94f64', {cap:'#ffffff'}, 1], ['#3fb4c9', {mustache:false, hair:L('#3a2414'), pants:L('#3a4a6a')}, 0], ['#f2c94c', {cap:'#2c3e50'}, 1], ['#8e6bd8', {mustache:false, hair:L('#1e140c'), pants:L('#2f2f3a')}, 1], ['#4caf6a', {mustache:false}, 0], ['#ff8a3d', {cap:'#e94f64'}, 1]];
     const VIS = B.vis = {list:[], day:-1, acc:0, paid:false, pool:[]};
     const flashMat = new THREE.SpriteMaterial({color:0xffffff, transparent:true, opacity:0, depthWrite:false, blending:THREE.AdditiveBlending});
@@ -6461,6 +6546,7 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
       const D = B.dog;
       if (D){
         let tx = D.x, tz = D.z, mode = 'follow', sn = null;
+        if (!run){ tx = DOGH.x; tz = DOGH.z - .95; }
         if (run){
           sn = snakes.find(s => !s.dead && Math.hypot(s.x - player.pos.x, s.z - player.pos.z) < 9) || null;
           const mk = monkey.g && (monkey.state === 'seek' || monkey.state === 'flee') && Math.hypot(monkey.x - player.pos.x, monkey.z - player.pos.z) < 30;
@@ -6469,7 +6555,12 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
           else if (!(inDock(player.pos.x, player.pos.z) || stairAt(player.pos.x, player.pos.z))){ const fx = Math.sin(player.yaw), fz = Math.cos(player.yaw); tx = player.pos.x - fx*1.7 + fz*.9; tz = player.pos.z - fz*1.7 - fx*.9; }
           if ((tz > 13.4) !== (D.z > 13.4) && Math.abs(D.x - .2) > .7){ tx = .2; tz = D.z > 13.4 ? 14.4 : 12.3; }
         }
-        const dx = tx - D.x, dz = tz - D.z, d = Math.hypot(dx, dz);
+        // empacou (trator ou carreta no caminho): contorna pelo lado
+        if (D.detT > 0){ D.detT -= dt; tx = D.detX; tz = D.detZ; }
+        let dx = tx - D.x, dz = tz - D.z, d = Math.hypot(dx, dz);
+        if (Math.hypot(tx - (D.ptx || 0), tz - (D.ptz || 0)) > 1.2){ D.lastD = undefined; D.chk = 0; } D.ptx = tx; D.ptz = tz; // alvo mudou: não é empacar
+        D.chk = (D.chk || 0) + dt;
+        if (D.chk > .7){ if (run && !(D.detT > 0) && d > 1.5 && (D.lastD === undefined ? 99 : D.lastD) - d < .3){ D.detS = -(D.detS || 1); const ux = dx/(d || 1), uz = dz/(d || 1); D.detX = D.x - uz*3*D.detS + ux*1.5; D.detZ = D.z + ux*3*D.detS + uz*1.5; D.detT = 1.4; } D.lastD = d; D.chk = 0; }
         const want = mode !== 'follow' ? 7.5 : d > 6 ? Math.min(12, 7.5 + (d - 6)*.9) : d > 1 ? Math.max(1.6, d*1.8) : 0;
         D.sp += (want - D.sp)*Math.min(1, dt*5);
         if (D.sp > .05 && d > .05){ const s = Math.min(d, D.sp*dt); D.x += dx/d*s; D.z += dz/d*s; D.yaw = angLerp(D.yaw, Math.atan2(dx, dz), Math.min(1, dt*8)); }
@@ -6482,8 +6573,10 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
         D.a.legs.forEach((l, i) => { l.rotation.x = st*amp*((i === 0 || i === 3) ? 1 : -1); });
         D.a.tail.rotation.y = Math.sin(now*(D.sp > 2 ? 6 : 11))*.55; D.a.tail.rotation.x = D.sp > 4 ? .5 : 0;
         D.a.head.rotation.x = D.sp > 1 ? .1 : Math.sin(now*.7)*.08 - .05;
-        if (D.z < 13.4) pushOutOfTractors(D);
-        D.a.g.position.set(D.x, floorAt(D.x, D.z) + (D.sp > 3 ? Math.abs(Math.sin(D.ph))*.05 : 0), D.z); D.a.g.rotation.y = D.yaw;
+        { const home = !run && Math.hypot(D.x - DOGH.x, D.z - DOGH.z + .95) < .4; D.lie += ((home ? 1 : 0) - D.lie)*Math.min(1, dt*3);
+          if (D.lie > .01){ if (home) D.yaw = angLerp(D.yaw, Math.PI, Math.min(1, dt*3)); D.a.legs.forEach((l, i) => { l.rotation.x = l.rotation.x*(1 - D.lie) - (i < 2 ? 1.45 : 1.3)*D.lie; }); D.a.head.rotation.x = D.a.head.rotation.x*(1 - D.lie) + .35*D.lie; D.a.tail.rotation.y *= 1 - D.lie*.8; D.a.tail.rotation.x = D.a.tail.rotation.x*(1 - D.lie) - 1.5*D.lie; } }
+        if (D.z < 13.4 && allTractors().some(T => T.route && T.route.length)) pushOutOfTractors(D); // trator parado: passa por baixo da carreta
+        D.a.g.position.set(D.x, floorAt(D.x, D.z) + (D.sp > 3 ? Math.abs(Math.sin(D.ph))*.05 : 0) - .26*(D.lie || 0), D.z); D.a.g.rotation.y = D.yaw;
       }
       updateVisitors(dt);
       // gente da vila
@@ -6495,8 +6588,8 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
     };
     // começo de cada dia: desce do cavalo, cavalo volta ao palanque, cachorro junto do dono, turistas novos
     B.reset = () => {
-      if (B.horse){ player.horse = null; Object.assign(B.horse, {x:HPOST.x, z:HPOST.z, yaw:Math.PI, spd:0}); }
-      if (B.dog){ B.dog.x = player.pos.x - 1.2; B.dog.z = player.pos.z + 1; B.dog.sp = 0; }
+      if (B.horse){ player.horse = null; Object.assign(B.horse, {x:HPOST.x, z:HPOST.z, yaw:HPOST.yaw, spd:0}); }
+      if (B.dog){ B.dog.x = DOGH.x; B.dog.z = DOGH.z - .95; B.dog.yaw = Math.PI; B.dog.sp = 0; B.dog.lie = 1; }
       for (const v of VIS.list) v.b.R.g.visible = false; VIS.list = []; VIS.acc = 0;
       if (OV.state === 'roast'){ OV.state = 'done'; OV.glow.visible = false; OV.roast.visible = true; }
       for (const a of animalsOf('bull')) a.g.scale.setScalar(bullScale(a.born));
