@@ -4700,6 +4700,7 @@ function ctxAction(){
   if (player.horse) return {type:'dismount'};
   { const sk = snakeToKill(); if (sk) return {type:'snake', sn:sk}; }
   { const fs2 = farmStation(); if (fs2) return {type:'farm', s:fs2}; }
+  if (BICHO.heldFood && BICHO.heldFood()) return {type:'putFood'};
   const nc = n ? nearCartT() : null;
   // dá para pôr o cacho na carreta parada ou andando (só não quando ela está indo descarregar)
   if (SALE.on){ const sa = SALE.action(); if (sa) return sa; }
@@ -4732,6 +4733,7 @@ function actionDown(){
   pressed = true;
   const a = ctxAction();
   if (a.type === 'dismount'){ BICHO.dismount(); return; }
+  if (a.type === 'putFood'){ BICHO.putFood(); return; }
   if (a.type === 'snake'){ const sn = a.sn; player.yaw = Math.atan2(sn.x - player.pos.x, sn.z - player.pos.z); startSwing(null); player.crouchT = .4; snd.chop('good'); killSnake(sn, 'player'); return; }
   if (a.type === 'farm'){ if (a.s.ready()) a.s.act(); else float(a.s.hint(), headPos(), '#ffd2a8'); return; }
   if (a.type === 'tank' || a.type === 'take' || a.type === 'takePile' || a.type === 'cartWait'){ SALE.act(a); return; }
@@ -5236,6 +5238,7 @@ function updateUI(dt){
     if (a.type === 'farm'){ hint = a.s.ready() ? k + ': ' + a.s.hint() : a.s.hint(); btn = a.s.btn; }
     else if (a.type === 'snake'){ hint = k + ': matar a cobra com a foice'; btn = 'Matar'; }
     else if (a.type === 'dismount'){ hint = k + ': descer do cavalo'; btn = 'Descer'; }
+    else if (a.type === 'putFood'){ hint = 'Leve a comida até o bicho (siga o balão) · ' + k + ': guardar de volta'; btn = 'Guardar'; }
     else if (a.type === 'tank' || a.type === 'take' || a.type === 'takePile' || a.type === 'cartWait'){ hint = SALE.hint(a, k); btn = a.type === 'tank' ? 'Tanque' : a.type === 'cartWait' ? 'Esperar' : 'Pegar'; }
     else if (a.type === 'deliver'){ hint = k + ': pôr na carreta'; btn = 'Entregar'; }
     else if (a.type === 'wait'){ hint = 'Trator descarregando…'; btn = 'Esperar'; }
@@ -6775,11 +6778,51 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
     ];
     const foodOf = k => FOODS.find(f => f.k === k), heldFood = () => FARM.held && String(FARM.held).startsWith('feed:') ? FARM.held.slice(5) : null;
     const FOOD_MESH = {};
-    const foodMesh = f => { if (FOOD_MESH[f.k]) return FOOD_MESH[f.k];
-      const g = new THREE.Group(), sg = new THREE.SphereGeometry(1, 12, 8); sg.scale(.16, .2, .11); const sk = new THREE.Mesh(sg, L('#d8c79a', {roughness:.95})); g.add(sk);
-      const band = new THREE.Mesh(new THREE.CylinderGeometry(.155, .155, .07, 12, 1, true), L(f.cor, {roughness:.7, side:THREE.DoubleSide})); band.scale.z = .7; g.add(band);
-      const tie = new THREE.Mesh(new THREE.CylinderGeometry(.03, .05, .08, 8), L('#a08a5a')); tie.position.y = .21; g.add(tie);
-      g.traverse(o => { if (o.isMesh) o.castShadow = true; }); return (FOOD_MESH[f.k] = g); };
+    // cada comida tem a sua cara na mão: fardo, balde, cesto, saco, sacola, pacote, tigela e pote
+    const speck = (base, cols, n, sz = 3) => tex(128, 128, (g, w, h) => { g.fillStyle = base; g.fillRect(0, 0, w, h); for (let i=0;i<n;i++){ g.fillStyle = pick(cols); const r = rnd(sz*.6, sz*1.3); g.beginPath(); g.ellipse(rnd(0, w), rnd(0, h), r, r*rnd(.5, 1), rnd(0, 3), 0, 7); g.fill(); } });
+    const labelTex = (bgc, fg, t1, t2, draw) => tex(256, 256, (g, w, h) => { g.fillStyle = bgc; g.fillRect(0, 0, w, h); for (let i=0;i<w;i+=4){ g.fillStyle = 'rgba(0,0,0,.05)'; g.fillRect(i, 0, 1, h); }
+      if (draw) draw(g, w, h); g.fillStyle = fg; g.textAlign = 'center'; g.font = 'bold 44px Arial'; g.fillText(t1, w/2, h*.78); if (t2){ g.font = 'bold 26px Arial'; g.fillText(t2, w/2, h*.92); } });
+    const disc = (r, mat, y) => { const m = new THREE.Mesh(new THREE.CircleGeometry(r, 18).rotateX(-Math.PI/2), mat); m.position.y = y; return m; };
+    const MAKERS = {
+      feno: () => { const g = new THREE.Group(), hay = L('#d9c070', {map:speck('#cdb25e', ['#e8d28a', '#a8903e', '#f0e0a0'], 900, 2), roughness:1});
+        g.add(new THREE.Mesh(new THREE.BoxGeometry(.44, .26, .3), hay));
+        for (const x of [-.11, .11]) { const t = new THREE.Mesh(new THREE.BoxGeometry(.015, .27, .31), L('#6a4a2a')); t.position.x = x; g.add(t); }
+        for (let i=0;i<10;i++){ const st = new THREE.Mesh(new THREE.CylinderGeometry(.004, .004, .12, 3), hay); st.position.set(rnd(-.2, .2), .13, rnd(-.13, .13)); st.rotation.set(rnd(-1, 1), 0, rnd(-1, 1)); g.add(st); }
+        return g; },
+      aveia: () => { const g = new THREE.Group(), met = L('#a8b0b6', {roughness:.35, metalness:.6, side:THREE.DoubleSide});
+        g.add(new THREE.Mesh(new THREE.CylinderGeometry(.15, .12, .26, 16, 1, true), met)); g.add(disc(.12, met, -.13));
+        g.add(disc(.145, L('#cdb27a', {map:speck('#c9ad72', ['#e2cc98', '#9a8048'], 700, 3), roughness:.9}), .1));
+        const hd = new THREE.Mesh(new THREE.TorusGeometry(.15, .008, 5, 16, Math.PI), met); hd.position.y = .12; g.add(hd);
+        return g; },
+      milho: () => { const g = new THREE.Group(), wick = L('#a87a42', {map:tex(128, 64, (c, w, h) => { c.fillStyle = '#9a6e3a'; c.fillRect(0, 0, w, h); c.strokeStyle = 'rgba(60,40,20,.6)'; for (let y=0;y<h;y+=8){ c.beginPath(); for (let x=0;x<=w;x+=8) c.lineTo(x, y + ((x/8 + y/8)%2 ? 3 : -3)); c.stroke(); } }, [4, 1]), roughness:.95, side:THREE.DoubleSide});
+        g.add(new THREE.Mesh(new THREE.CylinderGeometry(.19, .13, .18, 16, 1, true), wick)); g.add(disc(.13, wick, -.09));
+        g.add(disc(.18, L('#f2c43a', {map:speck('#e8b020', ['#ffd85a', '#c88a10'], 600, 3), roughness:.6}), .07));
+        for (const [x, rz] of [[-.06, .4], [.07, -.3]]){ const cob = new THREE.Mesh(new THREE.CylinderGeometry(.03, .025, .2, 8), L('#f2c43a', {map:speck('#e8b020', ['#ffd85a', '#b07a08'], 300, 4), roughness:.5})); cob.position.set(x, .12, 0); cob.rotation.set(1.2, 0, rz); g.add(cob);
+          const hk = new THREE.Mesh(new THREE.ConeGeometry(.035, .14, 6), L('#9ab05a', {roughness:.8})); hk.position.set(x, .16, -.1); hk.rotation.set(-1.9, 0, rz); g.add(hk); }
+        return g; },
+      racaoPeru: () => { const g = new THREE.Group(), lab = L('#ffffff', {map:labelTex('#c9a26a', '#7a2a1a', 'PERU', 'RAÇÃO', (c, w, h) => { c.fillStyle = '#7a2a1a'; c.fillRect(0, h*.62, w, 6); c.font = '90px "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif'; c.textAlign = 'center'; c.fillText('🦃', w/2, h*.5); }), roughness:.9});
+        const sg = new THREE.BoxGeometry(.28, .36, .15, 3, 4, 2); { const p = sg.attributes.position; for (let i=0;i<p.count;i++){ const y = p.getY(i), k = 1 - Math.pow(Math.abs(y)/.18, 4)*.25; p.setX(i, p.getX(i)*k); p.setZ(i, p.getZ(i)*(k + .1*(1 - Math.abs(y)/.18))); } sg.computeVertexNormals(); }
+        g.add(new THREE.Mesh(sg, lab)); const top = new THREE.Mesh(new THREE.BoxGeometry(.24, .03, .04), L('#a07a48')); top.position.y = .19; g.add(top); return g; },
+      sementes: () => { const g = new THREE.Group(), cloth = L('#e8dcc0', {map:speck('#e4d6b4', ['#cfbe98', '#f4ead2'], 300, 3), roughness:1});
+        const pg = new THREE.SphereGeometry(.13, 16, 12); pg.scale(1, 1.15, 1); g.add(new THREE.Mesh(pg, cloth));
+        const neck = new THREE.Mesh(new THREE.CylinderGeometry(.04, .07, .07, 10), cloth); neck.position.y = .16; g.add(neck);
+        const tie = new THREE.Mesh(new THREE.TorusGeometry(.045, .01, 5, 12), L('#a3402a')); tie.position.y = .15; tie.rotation.x = Math.PI/2; g.add(tie);
+        const open = disc(.05, L('#3a3028', {map:speck('#2a2420', ['#f0ece0', '#5a5048'], 200, 4), roughness:.8}), .2); g.add(open);
+        const fl = new THREE.Mesh(new THREE.PlaneGeometry(.12, .12), L('#ffffff', {map:tex(64, 64, (c, w, h) => { c.clearRect(0, 0, w, h); c.fillStyle = '#f2c43a'; for (let i=0;i<12;i++){ c.save(); c.translate(32, 32); c.rotate(i/12*Math.PI*2); c.beginPath(); c.ellipse(0, 18, 5, 12, 0, 0, 7); c.fill(); c.restore(); } c.fillStyle = '#5a3a1a'; c.beginPath(); c.arc(32, 32, 10, 0, 7); c.fill(); }), transparent:true}));
+        fl.position.set(0, 0, .135); g.add(fl); return g; },
+      racaoCao: () => { const g = new THREE.Group(), lab = L('#ffffff', {map:labelTex('#c23a2e', '#ffd85a', 'RAÇÃO', 'CÃES', (c, w, h) => { c.fillStyle = '#ffd85a'; c.save(); c.translate(w/2, h*.36); c.rotate(-.4); c.fillRect(-55, -12, 110, 24); for (const sx of [-1, 1]) for (const sy of [-1, 1]){ c.beginPath(); c.arc(sx*58, sy*12, 18, 0, 7); c.fill(); } c.restore(); }), roughness:.6});
+        g.add(new THREE.Mesh(new THREE.BoxGeometry(.26, .36, .1), lab)); const fold = new THREE.Mesh(new THREE.BoxGeometry(.26, .05, .03), L('#9a2a20')); fold.position.y = .2; g.add(fold); return g; },
+      quirera: () => { const g = new THREE.Group(), al = L('#c8cdd0', {roughness:.3, metalness:.7, side:THREE.DoubleSide});
+        const bw = new THREE.LatheGeometry([[0, 0], [.1, 0], [.15, .04], [.18, .1], [.185, .11]].map(([r, y]) => new THREE.Vector2(r, y)), 18); bw.translate(0, -.05, 0); g.add(new THREE.Mesh(bw, al));
+        g.add(disc(.165, L('#e8c860', {map:speck('#e0bc50', ['#f6dc80', '#c89a30'], 1400, 1.5), roughness:.8}), .04)); return g; },
+      racaoPeixe: () => { const g = new THREE.Group(), lab = L('#ffffff', {map:labelTex('#2f6ab0', '#ffffff', 'PEIXE', 'RAÇÃO', (c, w, h) => { c.font = '90px "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif'; c.textAlign = 'center'; c.fillText('🐟', w/2, h*.5); }), roughness:.4});
+        g.add(new THREE.Mesh(new THREE.CylinderGeometry(.09, .09, .2, 18), lab)); g.add(disc(.088, L('#c8562a', {map:speck('#b84a20', ['#e07040', '#8a3010'], 300, 4), roughness:.7}), .101));
+        const lid = new THREE.Mesh(new THREE.CylinderGeometry(.095, .095, .02, 18), L('#2f6ab0', {roughness:.4})); lid.position.set(.08, .13, -.04); lid.rotation.z = .9; g.add(lid); return g; },
+    };
+    const foodMesh = f => { if (FOOD_MESH[f.k]) return FOOD_MESH[f.k]; const g = (MAKERS[f.k] || MAKERS.racaoPeru)(); g.traverse(o => { if (o.isMesh) o.castShadow = true; }); return (FOOD_MESH[f.k] = g); };
+    // comida na mão sem bicho para comer: dá para guardar de volta no paiol de qualquer lugar
+    B.putFood = () => { const f = foodOf(heldFood()); drop(); float((f ? f.nome : 'Comida') + ' guardada de volta no paiol', headPos(), '#fff1a8'); noiseHit(.15, 'lowpass', 1200, .1); };
+    B.heldFood = heldFood;
     const takeFood = f => { if (FARM.held) drop(); FARM.held = 'feed:' + f.k; FARM.heldMesh = foodMesh(f); noiseHit(.2, 'lowpass', 1400, .12); float(f.nome + ' na mão: leve para ' + f.para, headPos(), '#fff1a8'); };
     // escolher a comida no paiol
     const fov = document.createElement('div'); fov.className = 'overlay'; fov.style.display = 'none'; fov.style.zIndex = '9'; fov.innerHTML = '<div class="card" id="foodCard"></div>'; (document.getElementById('stage') || document.body).appendChild(fov);
