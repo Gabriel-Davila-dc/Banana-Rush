@@ -529,9 +529,7 @@ const ROAD = groundMaps(512, 256, (g, h, S, Hh) => {
     h.fillStyle = hg; h.fillRect(0, y0 - 22, S, 44);
     for (let x=0;x<S;x+=8){ g.fillStyle = 'rgba(60,40,24,.22)'; g.fillRect(x, y0 - 11, 3, 22); h.fillStyle = 'rgba(0,0,0,.3)'; h.fillRect(x, y0 - 11, 3, 22); }
   }
-  paintGrass(g, h, S, Hh, 2600, 106, 134, 5, 15);
-  paintGrass(g, h, S, Hh, 1300, 0, 14, 5, 15);
-  paintGrass(g, h, S, Hh, 1300, Hh - 14, Hh, 5, 15);
+  // estrada só de terra: sem faixa de capim no meio nem nas beiras (a beira some no capim pelo shader)
 });
 const roadTex = ROAD.map, roadNrm = ROAD.nrm;
 // broto (ladrão): folha estreita verde com pintas vinho na base, como no bananal de verdade
@@ -813,8 +811,8 @@ function roadify(mat){
     sh.fragmentShader = 'varying float vRS;\nvarying vec2 vRW;\nfloat rH(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7)))*43758.5453); }\nfloat rN(vec2 p){ vec2 i = floor(p), f = fract(p), u = f*f*(3.0 - 2.0*f); return mix(mix(rH(i), rH(i + vec2(1.0, 0.0)), u.x), mix(rH(i + vec2(0.0, 1.0)), rH(i + vec2(1.0, 1.0)), u.x), u.y); }\n' +
       sh.fragmentShader.replace('#include <alphamap_fragment>', `if (vRS > 0.5){
     float e = abs(clamp(vRS - 1.0, 0.0, 1.0) - 0.5)*2.0;
-    float ed = e + rN(vRW*0.8)*0.24 + rN(vRW*3.3)*0.1 - 0.12;
-    diffuseColor.a *= 1.0 - smoothstep(0.64, 0.98, ed);
+    float ed = e + rN(vRW*0.8)*0.06 + rN(vRW*3.3)*0.03 - 0.045; // só a beirinha mistura com o capim: o leito é todo de terra
+    diffuseColor.a *= 1.0 - smoothstep(0.88, 1.0, ed);
     float rut = exp(-pow((e - 0.44)/0.11, 2.0));
     diffuseColor.rgb *= 1.0 - 0.24*rut*(0.55 + 0.45*rN(vRW*1.7));
     diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb*vec3(0.86, 0.8, 0.7), smoothstep(0.42, 0.9, ed)*0.5);
@@ -1191,8 +1189,8 @@ grassTex.repeat.set(190, 190);
 const field = new THREE.Mesh(drape(new THREE.PlaneGeometry(46, 36, 46, 36).rotateX(-Math.PI/2), 0, -11, .035), M.field);
 field.position.set(0, 0, -11); field.receiveShadow = true; scene.add(field);
 roadTex.repeat.set(52, 1);
-const road = new THREE.Mesh(drape(roadSide(new THREE.PlaneGeometry(190, 4.6, 190, 4).rotateX(-Math.PI/2)), 35, 10, .06), M.road);
-road.position.set(35, 0, 10); road.receiveShadow = true; scene.add(road);
+const road = new THREE.Mesh(drape(roadSide(new THREE.PlaneGeometry(190, 5.6, 190, 4).rotateX(-Math.PI/2)), 35, 9.6, .06), M.road);
+road.position.set(35, 0, 9.6); road.receiveShadow = true; scene.add(road); // vai até a beira do bananal: sem faixa de capim entre a estrada e as bananeiras
 for (const ln of HLINES.slice(1)){
   const len = ln.x1 - ln.x0, t = roadTex.clone(); t.needsUpdate = true; t.repeat.set(len/3.6, .75);
   const cx = (ln.x0 + ln.x1)/2;
@@ -1202,7 +1200,7 @@ for (const ln of HLINES.slice(1)){
 for (const v of VLINES){
   const len = v.z1 - v.z0, t = roadTex.clone(); t.needsUpdate = true; t.repeat.set(len/3.6, .75);
   const cz = (v.z0 + v.z1)/2;
-  const m = new THREE.Mesh(drape(roadSide(new THREE.PlaneGeometry(len, 3.4, Math.ceil(len), 4).rotateZ(Math.PI/2).rotateX(-Math.PI/2)), v.x, cz, .07), M.road);
+  const m = new THREE.Mesh(drape(roadSide(new THREE.PlaneGeometry(len, 5.2, Math.ceil(len), 4).rotateZ(Math.PI/2).rotateX(-Math.PI/2)), v.x, cz, .07), M.road);
   m.position.set(v.x, 0, cz); m.receiveShadow = true; scene.add(m);
 }
 
@@ -1212,7 +1210,7 @@ function farmBare(x, z){
   const inR = (x0, x1, z0, z1) => x > x0 && x < x1 && z > z0 && z < z1;
   return inR(-1.2, 1.6, 13, 36) || inR(-13.5, 30.8, 28.5, 30.5) || inR(-6.2, 6.2, 34.6, 45.2) || inR(-26.2, -13, 34.8, 44.7) || Math.hypot(x - 4.5, z - 18) < 1.3 || inR(5.5, 6.8, 17.9, 19.3)
     || inR(7.6, 18.9, 15.8, 25.9) || inR(23.6, 33.4, 15.8, 24.4) || ((x - 33)/7.6)**2 + ((z - 38)/5.3)**2 < 1
-    || inR(-13.7, -8.3, 13.8, 18.9) || inR(-13.7, -7.1, 20.1, 27.1) || inR(-28, -19.5, 33.2, 35.6) || inR(-33.2, -27, 33.4, 37.6) || inR(6.4, 8.3, 33.9, 35.9);
+    || inR(-13.7, -7.1, 20.1, 27.1) || inR(-28, -19.5, 33.2, 35.6) || inR(-33.2, -27, 33.4, 37.6) || inR(6.4, 8.3, 33.9, 35.9);
 }
 // estradinha até a vila, rua e quintais da frente sem capim
 const villageBare = (x, z) => (Math.abs(x - 50.5) < 1.7 && z < 9 && z > -56) || (x > 11.5 && x < 60.5 && z > -66 && z < -52.6);
@@ -2016,13 +2014,63 @@ function sideStep(Y, O){
   }
   return null;
 }
+// abrir caminho: dá ré pelo caminho por onde veio (que está livre), se afastando do outro, até sair do trajeto dele; depois volta ao que ia fazer
+function laneClear(X, Y){
+  const lane = [{x:X.x, z:X.z}].concat((X.route || []).filter(w => !w.hold)), clr = X.cartHalfW + Y.cartHalfW + .6;
+  return (x, z) => { if (Math.hypot(x - X.x, z - X.z) < X.cartBack + clr) return false; for (let i=0;i<lane.length - 1;i++){ const a = lane[i], b = lane[i + 1], vx = b.x - a.x, vz = b.z - a.z, L2 = vx*vx + vz*vz || 1, t = clamp(((x - a.x)*vx + (z - a.z)*vz)/L2, 0, 1); if (Math.hypot(a.x + vx*t - x, a.z + vz*t - z) < clr) return false; } return true; };
+}
+function backPlan(Y, X){
+  const tl = Y.trail || [];
+  if (tl.length < 2 || Math.hypot(tl[tl.length - 1].x - Y.x, tl[tl.length - 1].z - Y.z) > 1.6) return null;
+  const offLane = laneClear(X, Y);
+  const back = []; let px = Y.x, pz = Y.z, dist = 0, k = tl.length - 1, out = -1, dX = Math.hypot(Y.x - X.x, Y.z - X.z);
+  for (; k >= 0; k--){ const q = tl[k], dq = Math.hypot(q.x - X.x, q.z - X.z); if (dq < dX - .4 && dist > 1) return null; dX = Math.max(dX, dq); // a ré levaria para cima do outro
+    dist += Math.hypot(q.x - px, q.z - pz); px = q.x; pz = q.z; if (dist > 1) back.push({x:q.x, z:q.z, rev:true});
+    if (out < 0 && offLane(q.x, q.z)) out = dist; if (out >= 0 && dist > out + Y.cartBack*.5 + 2.5) break; }
+  if (out < 0) return null;
+  return {back, keep:Math.max(0, k), dist};
+}
+function giveWay(Y, X){
+  for (const [A, B] of [[Y, X], [X, Y]]){
+    if (!(A.state === 'here' || (A.route && A.route.length))) continue;
+    const P = backPlan(A, B); if (!P) continue;
+    A.trail.length = P.keep; applyGive(A, P.back, B); A.yieldT = now + 3 + P.dist; B.yieldT = now + 2; return true;
+  }
+  for (const [A, B] of [[Y, X], [X, Y]]){ const P = sideStep(A, B), Pl = P && P[P.length - 1]; if (P && laneClear(B, A)(Pl.x, Pl.z) && applyGive(A, P, B)){ A.yieldT = now + 6; B.yieldT = now + 2; return true; } }
+  Y.yieldT = now + 1.5; return false;
+}
+function applyGive(A, P, B){
+  A.waitT = 0; A.blockT = 0; A.blockBy = null;
+  while (A.route && A.route.length && A.route[0].gw) A.route.shift();
+  const end = P[P.length - 1]; P = P.map(p => Object.assign({}, p, {gw:true})); P.push({x:end.x, z:end.z, gw:true, hold:B, until:now + 14});
+  if (A.state === 'here'){ const ax = tractorAxisX(A.yaw); A.route = P.concat([{x:A.x, z:A.z}]); A.state = 'moving'; A.home.set(A.x - ax.x*A.cartOff, 0, A.z - ax.z*A.cartOff); return true; }
+  if (A.route && A.route.length){ A.route.unshift(...P); return true; }
+  return false;
+}
 function driveRoute(dt, spd){
   let moved = 0;
   while (tractor.route.length && dt > 0){
-    const w = tractor.route[0], dx = w.x - tractor.x, dz = w.z - tractor.z, d = Math.hypot(dx, dz);
+    const w = tractor.route[0];
+    if (w.hold){ if (now < w.until && w.hold.route && w.hold.route.filter(q => !q.hold).length) return moved; tractor.route.shift(); continue; } // encostado: espera o outro passar
+    const dx = w.x - tractor.x, dz = w.z - tractor.z, d = Math.hypot(dx, dz);
     const last = tractor.route.length === 1;
     if (d < (last ? .2 : .75)){ if (last){ tractor.x = w.x; tractor.z = w.z; } tractor.route.shift(); continue; }
-    const target = Math.atan2(-dz, dx);
+    let sx = dx, sz = dz, sd = d; // para onde o trator mira (pode ser deslocado para o lado na hora de cruzar)
+    if (!w.rev && !(last && d < 4)){
+      const fx = dx/d, fz = dz/d; let off = 0;
+      for (const O of allTractors()){
+        if (O === tractor || !O.grp || !O.grp.visible || O.state === 'garage') continue;
+        const qx = O.x - tractor.x, qz = O.z - tractor.z, ahead = qx*fx + qz*fz;
+        if (ahead < -2 || ahead > 18 || Math.abs(qx*fz - qz*fx) > tractor.cartHalfW + O.cartHalfW + 1.5) continue;
+        off = Math.max(off, isDriving(O) || (O.route && O.route.length) ? 1.45 : 2.7);
+      }
+      if (off){
+        const look = Math.min(d, 4.5);
+        for (const sg of [1, -1]){ const px = tractor.x + fx*look - fz*off*sg, pz = tractor.z + fz*look + fx*off*sg;
+          if (tractorFree(px, pz, tractor.cartHalfW - .3, true)){ sx = px - tractor.x; sz = pz - tractor.z; sd = Math.hypot(sx, sz); break; } }
+      }
+    }
+    const target = Math.atan2(-sz, sx);
     { const ax = tractorAxisX(tractor.yaw), az = tractorAxisZ(tractor.yaw), HW = tractor.cartHalfW + .45;
       const inFront = p => { const qx = p.x - tractor.x, qz = p.z - tractor.z, lx = qx*ax.x + qz*ax.z, lz = qx*az.x + qz*az.z; return lx > 1.4 && lx < 4.6 && Math.abs(lz) < HW; };
       const npcAhead = [...workers, ...helpers].some(o => inFront(o.pos));
@@ -2034,22 +2082,23 @@ function driveRoute(dt, spd){
       tractor.waitT = 0; tractor.honked = false;
       const me = tractor, isMain = me === mainT;
       for (const O of allTractors()){
-        if (O === me || !O.grp || !O.grp.visible) continue;
-        const fx = dx/d, fz = dz/d, inPath = p => { const qx = p.x - me.x, qz = p.z - me.z, lx = qx*fx + qz*fz, lat = Math.abs(qx*fz - qz*fx); return lx > 1.2 && lx < Math.min(6.5, d + 3) && lat < me.cartHalfW - .1; }; // passa raspando com uns 20 cm de folga // olha para onde vai andar, não para onde o nariz aponta
+        if (O === me || !O.grp || !O.grp.visible || O.state === 'garage') continue;
+        const fx = sx/sd, fz = sz/sd, inPath = p => { const qx = p.x - me.x, qz = p.z - me.z, lx = qx*fx + qz*fz, lat = Math.abs(qx*fz - qz*fx); return lx > 1.2 && lx < Math.min(6.5, d + 3) && lat < me.cartHalfW - .1; }; // passa raspando com uns 20 cm de folga // olha para onde vai andar, não para onde o nariz aponta
         if (!tractorPts(O).some(inPath)) continue;
-        const moving = isDriving(O);
-        me.blockT = (me.blockT || 0) + dt;
-        if (isMain && !moving && me.blockT > 1.2 && !(O.sideT > now)){
-          // o outro está parado ou esperando na frente: ele encosta de lado para o principal passar
-          const P = sideStep(O, me); O.sideT = now + 6; O.waitT = 0;
-          if (!P){} else if (O.state === 'here'){ const Q = P[P.length - 1]; O.route = P; O.state = 'moving'; O.home.set(Q.x - tractorAxisX(O.yaw).x*O.cartOff, 0, Q.z - tractorAxisX(O.yaw).z*O.cartOff); } else O.route.unshift(...P);
+        me.blockT = (me.blockT || 0) + dt; me.blockBy = O;
+        // quem abre caminho: se os dois estão se esperando, o 2º trator; se o outro está estacionado, o estacionado
+        // (o 2º trator chegando perto do principal parado só estaciona ali mesmo)
+        if (me.blockT > .9 && !isDriving(O) && !(O.yieldT > now) && !(me.yieldT > now)){
+          const mutual = O.blockBy === me && O.blockT > 0;
+          if (!isMain && (me.state === 'moving' || me.state === 'returning')){ me.route.length = 0; me.blockT = 0; me.blockBy = null; me.departT = now + 9; return 0; } // estaciona e deixa o principal passar antes de sair de novo
+          const Y = mutual ? (isMain ? O : me) : O, X = Y === me ? O : me;
+          if (giveWay(Y, X)){ me.blockT = 0; if (me.route.length && me.route[0].rev) return 0; }
         }
-        if (!isMain && me.blockT > 1.5 && !(me.sideT > now)){ me.sideT = now + 6; const P = sideStep(me, O); if (P){ me.route.unshift(...P); me.waitT = 0; me.blockT = 0; return 0; } } // o 2º trator desvia sozinho
-        if (isMain && me.blockT > 25) continue; // último recurso para não travar o dia inteiro
+        if (me.blockT > 8) continue; // último recurso: passa assim mesmo para o dia não travar
         me.waitT = (me.waitT || 0) + dt;
         return 0;
       }
-      me.blockT = 0; }
+      me.blockT = 0; me.blockBy = null; }
     // manobra de trator de verdade: anda para onde o nariz aponta, vira aos poucos e diminui na curva
     { let err = target - tractor.yaw; err = Math.atan2(Math.sin(err), Math.cos(err));
       if ((w.rev && Math.abs(err) > 1.6) || (Math.abs(err) > 2.1 && d < 7)){ // destino atrás e perto: engata a ré e vai de costas, corrigindo a direção
@@ -2060,10 +2109,13 @@ function driveRoute(dt, spd){
       const al = Math.cos(Math.min(Math.abs(err), Math.PI/2));
       let v = spd*Math.max(.16, al*al); if (last) v = Math.min(v, Math.max(.7, d*1.4));
       const step = Math.min(d, v*dt), hx = Math.cos(tractor.yaw), hz = -Math.sin(tractor.yaw), k = d < 1.6 ? .55 : .08;
-      let mx = hx*(1 - k) + dx/d*k, mz = hz*(1 - k) + dz/d*k; const ml = Math.hypot(mx, mz) || 1;
+      let mx = hx*(1 - k) + sx/sd*k, mz = hz*(1 - k) + sz/sd*k; const ml = Math.hypot(mx, mz) || 1;
       // não passa da cerca nem entra no galpão ou na garagem: se o próximo passo bate, só esterça (manobra no lugar)
       const nx = tractor.x + mx/ml*step, nz = tractor.z + mz/ml*step, hwT = tractor.cartHalfW - .3;
-      if (tractorFree(nx, nz, hwT, true) || !tractorFree(tractor.x, tractor.z, hwT, true)){ tractor.x = nx; tractor.z = nz; moved += step; } }
+      if (tractorFree(nx, nz, hwT, true) || !tractorFree(tractor.x, tractor.z, hwT, true)){ tractor.x = nx; tractor.z = nz; moved += step;
+        const tl = tractor.trail || (tractor.trail = []), lp = tl[tl.length - 1];
+        if (lp && Math.hypot(lp.x - nx, lp.z - nz) > 3) tl.length = 0;
+        if (!lp || tl.length === 0 || Math.hypot(lp.x - nx, lp.z - nz) > .6){ tl.push({x:nx, z:nz}); if (tl.length > 60) tl.shift(); } } }
     break;
   }
   return moved;
@@ -3998,7 +4050,7 @@ function updateTractor(dt, follow, isMain){
   if (tractor.state === 'here'){
     const cp = cartPos(), far = Math.hypot(follow.x - cp.x, follow.z - cp.z);
     const tgt = cartTargetFor(follow), gain = far - Math.hypot(follow.x - tgt.x, follow.z - tgt.z);
-    if (game.running && !(game.mis && isMain) && !(SALE.on && !isMain) && far > (nearT ? 7 : 12) && gain > (nearT ? 3 : 6)){
+    if (game.running && !(game.mis && isMain) && !(SALE.on && !isMain) && !(tractor.departT > now) && far > (nearT ? 7 : 12) && gain > (nearT ? 3 : 6)){
       tractor.wantT += dt;
       if (tractor.wantT > (save.lv.trator >= 2 ? .5 : 1.4)){ tractor.home.set(tgt.x, 0, tgt.z); tractor.route = routeTo(tgt, true); tractor.state = 'moving'; tractor.wantT = 0; if (isMain) float('O trator vai até você', headPos(), '#fff6c8'); else float('2º trator vai até o Toninho', new V3(tractor.x, 3, tractor.z), '#fff6c8'); }
     } else tractor.wantT = 0;
@@ -4546,7 +4598,7 @@ function createTractor2(){
   if (tractor2) return;
   tractor2 = newTractorObj();
   withTractor(tractor2, () => { buildTractorModel(); buildTractorDetails(plaidMat('#2f5f9e', 'rgba(255,255,255,.45)'), {skin:'#a8693f', pants:L('#4a4036'), cap:'#c0392b'}); buildCart(); applyTractorLook(); });
-  tractor2.x = 14; tractor2.home.set(14 - tractor2.cartOff, 0, 10);
+  tractor2.x = -15; tractor2.home.set(-15 - tractor2.cartOff, 0, 10);
 }
 if (save.lv.trator2) createTractor2();
 
@@ -4587,8 +4639,8 @@ function resetDay(){
   for (const f of floats) f.el.remove(); floats.length = 0;
   for (const t of trees){ if (t.state === 'falling') startRegrow(t, 0); }
   Object.assign(game, {pCutT:now, t:dayLength(), kg:0, count:0, perfect:0, lost:0, earned:0, byQ:{magro:0, medio:0, gordo:0}});
-  Object.assign(tractor, {x:0, z:10, yaw:0, parkYaw:0, spot:0, route:[], wantT:0, state:'here', load:0, trips:0, cargo:[]}); tractor.home.set(-tractor.cartOff, 0, 10);
-  if (tractor2){ Object.assign(tractor2, {x:14, z:10, yaw:0, parkYaw:0, route:[], wantT:0, state:'here', load:0, trips:0, cargo:[]}); tractor2.home.set(14 - tractor2.cartOff, 0, 10); }
+  Object.assign(tractor, {x:0, z:10, yaw:0, parkYaw:0, spot:0, route:[], wantT:0, state:'here', load:0, trips:0, cargo:[], trail:[]}); tractor.home.set(-tractor.cartOff, 0, 10);
+  if (tractor2){ Object.assign(tractor2, {x:-15, z:10, yaw:0, trail:[], parkYaw:0, route:[], wantT:0, state:'here', load:0, trips:0, cargo:[]}); tractor2.home.set(-15 - tractor2.cartOff, 0, 10); }
   spawnSnakes(); player.stunT = 0; SALE.reset();
   for (const n of [...helpers, ...workers]) n.stunT = 0;
   trees.forEach(t => { t.harvester = null; });
@@ -4953,7 +5005,7 @@ function update(dt){
   p.moving = ml > .1;
   const ox = p.pos.x, oz = p.pos.z;
   if (p.moving){
-    p.pos.x += mx*speed*dt; p.pos.z += mz*speed*dt;
+    { const L = speed*dt, n = Math.max(1, Math.ceil(L/.12)); for (let k=0;k<n;k++){ p.pos.x += mx*L/n; p.pos.z += mz*L/n; if (k < n - 1) pushOut(p.pos); } }
     p.yaw = angLerp(p.yaw, Math.atan2(mx, mz), Math.min(1, dt*12));
     p.walk += dt*speed*2.2;
     const stepN = Math.floor(p.walk/Math.PI); if (stepN !== p.stepN){ p.stepN = stepN; if (p.horse) BICHO.clop(); else snd.step(stepSurface(p.pos.x, p.pos.z)); }
@@ -5768,6 +5820,16 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
     solid(x1 - 2.95, x1 - .2, 41.5, z1 - .2);
     for (const bz of [37.2, 39.2]){ mesh(uvScale(new THREE.BoxGeometry(2.4, 1.3, .08), 2, 1), FM.plank, x0 + 1.35, y + .65, bz); solid(x0, x0 + 2.6, bz - .06, bz + .06); }
     { const tr = mesh(uvScale(new THREE.BoxGeometry(.5, .45, 1.6), 1, 1.5), FM.plank, x0 + .45, y + .22, 38.2); solid(x0, x0 + .75, 37.4, 39); }
+    // sacos de ração dos bichos (milho e ração) empilhados na parede da direita, perto do portão
+    { const sackT = tex(128, 128, (g, w, h) => { g.fillStyle = '#d8c79a'; g.fillRect(0, 0, w, h); for (let i=0;i<w;i+=3){ g.fillStyle = 'rgba(120,96,60,.18)'; g.fillRect(i, 0, 1, h); g.fillRect(0, i, w, 1); } g.fillStyle = '#2f6a3a'; g.font = 'bold 26px Arial'; g.textAlign = 'center'; g.fillText('RAÇÃO', w/2, h*.55); g.fillStyle = '#a3402a'; g.fillRect(w*.15, h*.68, w*.7, 6); }), sackM = L('#ffffff', {map:sackT, roughness:.95});
+      // saco cheio: caixa arredondada, mais gordo no meio e amarrado nas pontas
+      const sg = new THREE.BoxGeometry(.5, .3, .82, 5, 3, 7); { const p = sg.attributes.position, v = new V3(); for (let i=0;i<p.count;i++){ v.fromBufferAttribute(p, i); const kz = 1 - Math.pow(Math.abs(v.z)/.41, 3)*.45, ky = 1 - Math.pow(Math.abs(v.y)/.15, 2)*.18; v.x *= kz*(1 - Math.pow(Math.abs(v.y)/.15, 2)*.15); v.y *= kz*.9 + .1; v.y += .15; v.x *= ky; p.setXYZ(i, v.x, v.y, v.z); } sg.computeVertexNormals(); }
+      for (const [sx, sz, sy, ry] of [[x1 - .75, 36.35, 0, .1], [x1 - .75, 37.4, 0, -.08], [x1 - .75, 38.45, 0, .05], [x1 - .78, 36.9, .23, -.12], [x1 - .78, 37.95, .23, .14], [x1 - .8, 37.4, .46, 0], [x1 - 1.55, 36.5, 0, 1.4]]){ const m = mesh(sg, sackM, sx, y + sy*1.15, sz); m.rotation.y = ry; }
+      for (const [cx2, cz2] of [[x1 - 1.4, 37.6], [x1 - 1.2, 38.9]]) mesh(new THREE.CylinderGeometry(.2, .17, .45, 12), M.metal, cx2, y + .23, cz2);
+      mesh(new THREE.CylinderGeometry(.19, .19, .02, 12), FM.corn, x1 - 1.4, y + .44, 37.6);
+      solid(x1 - 1.85, x1 - .2, 35.9, 39.15);
+      mesh(new THREE.BoxGeometry(.4, .14, 1.4), FM.hay, x0 + .45, y + .5, 38.2); // feno no cocho da baia
+      const bk = mesh(new THREE.CylinderGeometry(.22, .19, .32, 12), M.metal, x0 + 1.9, y + .16, 37.5); mesh(new THREE.CylinderGeometry(.2, .2, .02, 12), FM.water, x0 + 1.9, y + .3, 37.5); }
     // forcado e enxada encostados na parede
     for (const [tx, ang] of [[cx - 2.4, .15], [cx - 1.9, -.1]]){ const rod = mesh(new THREE.CylinderGeometry(.022, .022, 1.7, 6), FM.rail, tx, y + .85, z1 - .32); rod.rotation.x = ang; }
     for (let k=0;k<4;k++) mesh(new THREE.BoxGeometry(.012, .28, .012), FM.metal, cx - 2.48 + k*.05, y + 1.75, z1 - .2);
@@ -6286,17 +6348,8 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
     cepoAt(CEPO.x, CEPO.z, 'rooster', 'galo');
     cepoAt(36.2, 24.2, 'turkey', 'peru');
 
-    // ---------- estrebaria do cavalo (aberta para o terreiro) ----------
-    const HPOST = {x:-10.9, z:16.3, yaw:Math.PI/2};
-    { const x0 = -13.4, x1 = -8.6, z0 = 14.1, z1 = 18.6, y = base(x0, x1, z0, z1), H = 2.5;
-      mesh(drape(new THREE.PlaneGeometry(x1 - x0 - .2, z1 - z0 - .2, 6, 6).rotateX(-Math.PI/2), (x0 + x1)/2, (z0 + z1)/2, .05), FM.hay, (x0 + x1)/2, 0, (z0 + z1)/2, false);
-      mesh(uvScale(new THREE.BoxGeometry(.14, H, z1 - z0), (z1 - z0)/2, H/2), FM.plank, x0, y + H/2, (z0 + z1)/2);
-      for (const zz of [z0, z1]) mesh(uvScale(new THREE.BoxGeometry(x1 - x0, H*.62, .14), (x1 - x0)/2, H*.31), FM.plank, (x0 + x1)/2, y + H*.31, zz);
-      for (const zz of [z0, z1]) mesh(new THREE.BoxGeometry(.16, H + .2, .16), FM.post, x1, y + (H + .2)/2, zz);
-      const rf = mesh(uvScale(new THREE.BoxGeometry(x1 - x0 + .9, .1, z1 - z0 + .6), 3, 2.4), FM.roof, (x0 + x1)/2 + .2, y + H + .3, (z0 + z1)/2); rf.rotation.z = .12;
-      mesh(new THREE.BoxGeometry(.5, .5, 1.6), FM.plank, x0 + .35, y + 1.3, 16.3); mesh(new THREE.BoxGeometry(.4, .3, 1.5), FM.hay, x0 + .35, y + 1.6, 16.3);
-      mesh(new THREE.CylinderGeometry(.25, .22, .35, 12), M.metal, x0 + .5, y + .18, 17.8); mesh(new THREE.CylinderGeometry(.23, .23, .02, 12), FM.water, x0 + .5, y + .34, 17.8);
-      solid(x0 - .1, x0 + .1, z0, z1); solid(x0, x1, z0 - .08, z0 + .08); solid(x0, x1, z1 - .08, z1 + .08); }
+    // ---------- o cavalo mora na baia do paiol (celeiro), virado para o vão de entrada ----------
+    const HPOST = {x:-23.7, z:38.2, yaw:Math.PI/2};
 
     // ---------- viveiro do pavão: tela alta com teto, poleiro e casinha ----------
     const AV = {x0:-13.4, x1:-7.4, z0:20.4, z1:26.8};
@@ -6316,15 +6369,13 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
     { const y = base(38.4, TP.x1, 20.6, TP.z1); for (const px of [38.5, 40.9]) for (const pz of [20.8, 22.55]) mesh(new THREE.BoxGeometry(.1, 2, .1), FM.post, px, y + 1, pz);
       mesh(uvScale(new THREE.BoxGeometry(2.5, 1.1, .08), 2, 1), FM.plank, 39.7, y + .55, 22.55);
       const r = mesh(uvScale(new THREE.BoxGeometry(2.9, .08, 2.3), 1.4, 1.1), FM.roof, 39.7, y + 2.02, 21.7); r.rotation.x = .16;
-      mesh(uvScale(new THREE.BoxGeometry(1.6, .25, .4), 1, 1), FM.plank, 36.4, gy(36.4, 16) + .13, 15.9); mesh(new THREE.BoxGeometry(1.4, .04, .3), FM.corn, 36.4, gy(36.4, 16) + .27, 15.9); }
+    }
 
     // ---------- curral dos touros, atrás do paiol ----------
     const CU = {x0:-41.4, x1:-33.4, z0:33.2, z1:44.8};
     railFence(CU.x0, CU.x1, CU.z0, CU.z1, 4, 1.45);
     { const y = base(-41, -37.2, 41.4, 44.4); for (const [px, pz] of [[-41, 41.4], [-41, 44.4], [-37.2, 41.4], [-37.2, 44.4]]) mesh(new THREE.BoxGeometry(.16, 2.5, .16), FM.post, px, y + 1.2, pz);
       const r = mesh(uvScale(new THREE.BoxGeometry(4.6, .1, 3.8), 2.3, 1.9), FM.roof, -39.1, y + 2.45, 42.9); r.rotation.x = .14;
-      for (const [hx, hz] of [[-40.3, 43.9], [-39, 44]]) mesh(uvScale(new THREE.BoxGeometry(1.1, .5, .6), 1.4, 1), FM.hay, hx, gy(hx, hz) + .25, hz);
-      { const x = -34.1, z = 37.4, yy = gy(x, z); mesh(uvScale(new THREE.BoxGeometry(.6, .5, 2.2), 1, 2), FM.plank, x, yy + .25, z); mesh(new THREE.BoxGeometry(.46, .1, 2), FM.hay, x, yy + .5, z); }
       { const x = -34.1, z = 41, yy = gy(x, z); mesh(uvScale(new THREE.BoxGeometry(.6, .45, 1.6), 1, 1.5), FM.stone, x, yy + .22, z); mesh(new THREE.BoxGeometry(.46, .02, 1.45), FM.water, x, yy + .44, z, false); } }
     path(-20, 34.6, -27.5, 34.1, 1.6); path(-27.5, 34.1, -32.4, 36.6, 1.6);
 
@@ -6456,7 +6507,7 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
     // ---------- mercado: vender e comprar ----------
     const BX = [
       ['pavao', 'Pavão', 800, 2, 'Fica solto no terreiro da fazendinha. Tire 3 penas por dia e venda aqui.'],
-      ['cavalo', 'Cavalo crioulo', 1500, 1, 'Fica no palanque perto da porteira da fazendinha. Monte e ande o dobro mais rápido.'],
+      ['cavalo', 'Cavalo crioulo', 1500, 1, 'Fica na baia do paiol (o celeiro vermelho). Monte e ande o dobro mais rápido.'],
       ['cachorro', 'Cachorro caramelo', 300, 1, 'Anda sempre com você, mata cobra e espanta o macaco ladrão.'],
       ['galo', 'Galo', 60, 4, 'Vai para o galinheiro e canta de manhã. Abata, limpe e asse no forno de barro.'],
       ['peru', 'Peru', 150, 4, 'Vai para o galinheiro. Abata, limpe e asse no forno de barro.'],
@@ -6493,7 +6544,7 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
         save.money -= it[2];
         if (k === 'touro') save.touros.push(save.day); else save.bichos[k] = have + 1;
         persist(); coins(); B.sync();
-        toast({pavao:'O pavão já está no terreiro da fazendinha.', cavalo:'O cavalo está no palanque perto da porteira da fazendinha.', cachorro:'O Caramelo já está do seu lado!', galo:'O galo foi para o galinheiro.', peru:'O peru foi para o galinheiro.', touro:'O garrote foi para o pasto das vacas.'}[k]);
+        toast({pavao:'O pavão já está no terreiro da fazendinha.', cavalo:'O cavalo está na baia do paiol (o celeiro vermelho).', cachorro:'O Caramelo já está do seu lado!', galo:'O galo foi para o galinheiro.', peru:'O peru foi para o galinheiro.', touro:'O garrote foi para o pasto das vacas.'}[k]);
       }
       renderMkt();
     }
@@ -6502,7 +6553,7 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
     window.addEventListener('keydown', e => { if (B.mktOpen && (e.code === 'Escape' || e.code === 'KeyE')){ e.preventDefault(); B.closeMkt(); } });
 
     // ---------- turistas: chegam pela estrada, pagam o ingresso na porteira e passeiam ----------
-    const VR = [[-72, 12.3], [-20, 12.3], [.2, 12.3], [.2, 14.8, 1.5, 0, 22, 'pay'], [-5.4, 16.3, 4, -11, 16.3], [-5.4, 23.6, 5, -10.5, 23.6], [-5.4, 28.6], [-11.5, 29.5, 5, -24, 23], [-20, 34.6], [-27.5, 34.2], [-31.6, 36.9, 6, -37.5, 39], [-27.5, 34.2], [-20, 34.6], [-11.5, 29.5], [.2, 29.5], [19, 29.5, 5, 14, 21], [31, 26.8, 5, 37.8, 19], [26.5, 31.2, 5, 33, 38], [.2, 30.5], [.2, 33.4, 4, 3, 38], [.2, 14.8], [.2, 12.3], [-76, 12.3]];
+    const VR = [[-72, 12.3], [-20, 12.3], [.2, 12.3], [.2, 14.8, 1.5, 0, 22, 'pay'], [-5.4, 23.6, 5, -10.5, 23.6], [-5.4, 28.6], [-11.5, 29.5, 5, -24, 23], [-20, 34.4, 4, -23.7, 38.2], [-27.5, 34.2], [-31.6, 36.9, 6, -37.5, 39], [-27.5, 34.2], [-20, 34.6], [-11.5, 29.5], [.2, 29.5], [19, 29.5, 5, 14, 21], [31, 26.8, 5, 37.8, 19], [26.5, 31.2, 5, 33, 38], [.2, 30.5], [.2, 33.4, 4, 3, 38], [.2, 14.8], [.2, 12.3], [-76, 12.3]];
     const VLOOK = [['#e94f64', {cap:'#ffffff'}, 1], ['#3fb4c9', {mustache:false, hair:L('#3a2414'), pants:L('#3a4a6a')}, 0], ['#f2c94c', {cap:'#2c3e50'}, 1], ['#8e6bd8', {mustache:false, hair:L('#1e140c'), pants:L('#2f2f3a')}, 1], ['#4caf6a', {mustache:false}, 0], ['#ff8a3d', {cap:'#e94f64'}, 1]];
     const VIS = B.vis = {list:[], day:-1, acc:0, paid:false, pool:[]};
     const flashMat = new THREE.SpriteMaterial({color:0xffffff, transparent:true, opacity:0, depthWrite:false, blending:THREE.AdditiveBlending});
@@ -6642,7 +6693,7 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
         if (v.lbl){ if (run && near(v.x, v.z, 18)){ v.lbl.textContent = v.name; placeLabel(v.lbl, v.x, 2.15, v.z); } else v.lbl.style.display = 'none'; }
       }
     };
-    // começo de cada dia: desce do cavalo, cavalo volta ao palanque, cachorro junto do dono, turistas novos
+    // começo de cada dia: desce do cavalo, cavalo volta para a baia do paiol, cachorro junto do dono, turistas novos
     B.reset = () => {
       if (B.horse){ player.horse = null; Object.assign(B.horse, {x:HPOST.x, z:HPOST.z, yaw:HPOST.yaw, spd:0}); }
       if (B.dog){ B.dog.x = DOGH.x; B.dog.z = DOGH.z - .95; B.dog.yaw = Math.PI; B.dog.sp = 0; B.dog.lie = 1; }
