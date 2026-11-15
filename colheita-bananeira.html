@@ -375,7 +375,10 @@ window.addEventListener('resize', resize);
 resize();
 
 /* ---------- texturas pintadas ---------- */
-const ANISO = renderer.capabilities.getMaxAnisotropy();
+const ANISO = Math.min(LITE ? 4 : 16, renderer.capabilities.getMaxAnisotropy());
+// reduz a imagem da textura para no máximo 'max' pixels de largura (só no modo leve)
+function shrinkTex(t, max){ const im = t && t.image; if (!LITE || !im || !im.width || im.width <= max) return t;
+  const c = document.createElement('canvas'); c.width = max; c.height = Math.max(1, Math.round(im.height*max/im.width)); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); t.image = c; t.needsUpdate = true; return t; }
 function tex(w, h, draw, rep){
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const g = c.getContext('2d'); draw(g, w, h);
@@ -2859,7 +2862,7 @@ function lowGeo(src, cell){
   if (!src.boundingSphere) src.computeBoundingSphere(); g.boundingSphere = src.boundingSphere.clone(); g.boundingBox = src.boundingBox ? src.boundingBox.clone() : null;
   return g;
 }
-const TREE_FAR2 = (LITE ? 20 : 30)**2;
+const TREE_FAR2 = (LITE ? 20 : 30)**2, TREE_VFAR2 = (LITE ? 34 : 60)**2, PVFAR2 = (LITE ? 15 : 40)**2;
 const LOW_GEO = new WeakMap(), PFAR2 = (LITE ? 7 : 18)**2, _pls = new V3(), _plr = new V3();
 const triN = g => (g.index ? g.index.count : g.attributes.position.count)/3;
 function personParts(sm){
@@ -2867,23 +2870,33 @@ function personParts(sm){
   if (!P){ P = sm.userData.parts = []; const root = sm.parent; root.getWorldScale(_plr);
     root.traverse(o => { if (!o.isMesh || o.isSkinnedMesh || o.isInstancedMesh) return; const g = o.geometry; if (!g || !g.attributes.position || o.morphTargetInfluences) return; if (!g.boundingSphere) g.computeBoundingSphere(); o.getWorldScale(_pls); const rad = g.boundingSphere.radius*Math.max(_pls.x, _pls.y, _pls.z)/Math.max(.01, _plr.x);
       if (LITE && rad < .1) o.castShadow = false;
-      if (rad < .032) P.push([o]);
-      else if (triN(g) > 700) P.push([o, g, null]); }); }
+      if (rad < .032) P.push([o, null, null, rad]);
+      else if (triN(g) > 700) P.push([o, g, null, rad]);
+      else if (rad < .085) P.push([o, null, null, rad]); }); }
   return P;
 }
-function personFar(sm, on){
-  sm.userData.farOn = on;
-  for (const e of personParts(sm)){ const o = e[0], hi = e[1]; if (!hi){ o.layers.set(on ? 1 : 0); continue; }
+function personFar(sm, lvl){
+  const on = lvl >= 1; sm.userData.farOn = lvl;
+  // bem longe: fica só o corpo e o que está na altura da cabeça (cabeça, cabelo, chapéu); ferramenta, bota e miudeza somem
+  const root = sm.parent; root.updateMatrixWorld(true); root.getWorldScale(_plr);
+  root.traverse(o => { if (!o.isMesh || o.isSkinnedMesh) return; const g = o.geometry; if (!g || !g.attributes.position) return;
+    if (o.userData.prad === undefined){ if (!g.boundingSphere) g.computeBoundingSphere(); o.getWorldScale(_pls); o.userData.prad = g.boundingSphere.radius*Math.max(_pls.x, _pls.y, _pls.z)/Math.max(.01, _plr.x); }
+    const rad = o.userData.prad; let head = false; for (let q = o.parent; q && q !== root; q = q.parent) if (q === root.userData.H){ head = rad < .35; break; }
+    o.layers.set((on && rad < .032) || (lvl >= 2 && !head && g.type !== 'PlaneGeometry') ? 1 : 0); });
+  for (const e of personParts(sm)){ const o = e[0], hi = e[1]; if (!hi || !o.layers.test(camera.layers)) continue;
     if (on && !e[2]){ let lo = LOW_GEO.get(hi); if (!lo){ lo = lowGeo(hi, Math.min(.05, Math.max(.014, hi.boundingSphere.radius/7))); LOW_GEO.set(hi, lo); } e[2] = lo; }
     if (e[2] && (o.geometry === hi || o.geometry === e[2])) o.geometry = on ? e[2] : hi; }
 }
 function updateCull(){
   for (const sm of PEOPLE_LOD){ sm.getWorldPosition(_plp); const d2 = _plp.distanceToSquared(camera.position), near = d2 < 14*14, far = d2 > PFAR2; const E = sm.userData.body;
     if (far && !E.far){ E.far = lowGeo(E.lo, .03); E.far.boundingSphere = E.lo.boundingSphere; }
-    const want = far ? E.far : near && E.hi ? E.hi : E.lo; if (sm.geometry !== want) sm.geometry = want; if (!sm.userData.parts && sm.parent) personParts(sm); if (far !== !!sm.userData.farOn) personFar(sm, far); }
+    const want = far ? E.far : near && E.hi ? E.hi : E.lo; if (sm.geometry !== want) sm.geometry = want; if (!sm.userData.parts && sm.parent) personParts(sm); const lvl = d2 > PVFAR2 ? 2 : far ? 1 : 0; if (lvl !== (sm.userData.farOn || 0)) personFar(sm, lvl); }
   const cp0 = camera.position;
   for (const t of trees){ const c = t.crown, hi = c && c.userData.hi; if (!hi) continue; const far = (t.x - cp0.x)**2 + (t.z - cp0.z)**2 > TREE_FAR2; c.geometry = far ? hi.userData.low : hi; if (t.far) for (const o of t.far) o.visible = !far; if (t.kidG) t.kidG.visible = !far && t.kidShow !== false;
-    if (t.bunch){ if (t.bunch !== t._bt){ t._bt = t.bunch; t._btl = []; t._bf = null; t.bunch.traverse(o => { if (o.isMesh && triN(o.geometry) < 100) t._btl.push(o); }); } if (t._bf !== far){ t._bf = far; for (const o of t._btl) o.layers.set(far ? 1 : 0); } } }
+    if (t.bunch){ if (t.bunch !== t._bt){ t._bt = t.bunch; t._btl = []; t._bf = null; t.bunch.traverse(o => { if (o.isMesh && triN(o.geometry) < 100) t._btl.push(o); }); } if (t._bf !== far){ t._bf = far; for (const o of t._btl) o.layers.set(far ? 1 : 0); } }
+    { const vfar = (t.x - cp0.x)**2 + (t.z - cp0.z)**2 > TREE_VFAR2;
+      if (t.bunch !== t._vb){ t._vb = t.bunch; t._vl = []; t._vf = null; for (const g of [t.bunch, t.stump, t.sk, t.prop, t.dryMesh]) if (g) g.traverse(o => { if (o.isMesh) t._vl.push(o); }); }
+      if (t._vf !== vfar){ t._vf = vfar; for (const o of t._vl) o.layers.set(vfar ? 1 : (t._bf && t._btl.includes(o) ? 1 : 0)); } } }
   const Lc = chunkInstances.list; if (!Lc) return; const cp = camera.position; for (const ch of Lc) if (ch.userData.cullD) ch.visible = ch.userData.cullC.distanceTo(cp) < ch.userData.cullD; }
 // pedra leve: icosaedro deformado no tamanho da pedra original
 function lowRock(src){
@@ -2939,7 +2952,7 @@ function makePerson(shirtMat, tool, opt = {}){
   if (!shirtMat.normalMap){ shirtMat.normalMap = clothNrm; shirtMat.normalScale = new THREE.Vector2(.22, .22); }
   shirtMat.needsUpdate = true;
   const U = new THREE.Group(); U.position.y = .95; g.add(U); R.U = U;
-  const H = new THREE.Group(); H.position.y = .55; U.add(H); R.H = H;
+  const H = new THREE.Group(); H.position.y = .55; U.add(H); R.H = H; g.userData.H = H;
   const au = (geo, mat, x, y, z) => add(U, geo, mat, x, y - .95, z);
   R.seed = Math.random()*10;
   const female = !!(opt.hair || opt.scarf);
@@ -5605,12 +5618,12 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && !no
 
 (() => {
   const A = 'assets/', TL = new THREE.TextureLoader();
-  const ld = (file, srgb, cb) => TL.load(A + file, t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = ANISO; if (srgb) t.encoding = THREE.sRGBEncoding; cb(t); }, undefined, () => console.warn('arquivo não encontrado:', file));
+  const ld = (file, srgb, cb) => TL.load(A + file, t => { shrinkTex(t, /sky/.test(file) ? 2048 : /_nor/.test(file) ? 512 : 1024); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = ANISO; if (srgb) t.encoding = THREE.sRGBEncoding; cb(t); }, undefined, () => console.warn('arquivo não encontrado:', file));
   // chão fotografado: troca a textura pintada pela foto (continua na coordenada do mundo, misturando duas escalas)
   const photo = (mat, id, size, tint, key, nScale = 1, sat = 1) => {
     let got = 0; const done = () => { if (++got < 2) return; groundify(mat, size, tint, key, sat); if (mat === M.road) roadify(mat); mat.needsUpdate = true; };
-    ld('tex/' + id + '_diff.jpg', true, t => { mat.map = t; done(); });
-    ld('tex/' + id + '_nor.jpg', false, t => { mat.normalMap = t; mat.normalScale = new THREE.Vector2(nScale, nScale); done(); });
+    ld('tex/' + id + '_diff.jpg', true, t => { const o = mat.map; mat.map = t; if (o && o !== t && o.isCanvasTexture) o.dispose(); done(); });
+    ld('tex/' + id + '_nor.jpg', false, t => { const o = mat.normalMap; if (o && o !== t && o.isCanvasTexture) o.dispose(); mat.normalMap = t; mat.normalScale = new THREE.Vector2(nScale, nScale); done(); });
   };
   photo(M.field, 'forest_leaves_04', 3.6, '0.8, 0.74, 0.68', 'pfield', 1.3, .62);
   photo(M.coroa, 'farm_soil', 2.2, '0.85, 0.78, 0.7', 'pcoroa', 1.1, .8);
@@ -5644,6 +5657,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && !no
       const g = o.geometry.clone(); g.applyMatrix4(o.matrixWorld); g.computeBoundingBox();
       const b = g.boundingBox; g.translate(-(b.min.x + b.max.x)/2, -b.min.y, -(b.min.z + b.max.z)/2);
       const mt = o.material; if (mt.transparent){ mt.transparent = false; mt.alphaTest = .45; mt.depthWrite = true; }
+      if (LITE) for (const k of ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap']) if (mt[k]) shrinkTex(mt[k], 512);
       out.push({g, mt});
     });
     return out;
