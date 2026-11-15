@@ -4660,7 +4660,7 @@ function resetDay(){
   overnight();
   setupMission(); setGarage(!!game.mis); SALE.present(!game.mis);
   if (game.mis) game.order = null;
-  BICHO.reset();
+  BICHO.reset(); if (BICHO.fedReset) BICHO.fedReset();
 }
 
 /* ---------- contexto e ações ---------- */
@@ -4728,7 +4728,7 @@ const headPos = () => new V3(player.pos.x, 2.4, player.pos.z);
 const bunchValue = c => c.kg*PRICE*Q[c.q].mult*(c.v === 'prata' ? VAR.prata.mult : 1)*season().price*(1 + (c.wash ? .2 : 0) + (c.bag ? .3 : 0))*(c.gold ? 3 : 1);
 
 function actionDown(){
-  if (!game.running || pressed || player.stunT > 0 || BICHO.mktOpen) return;
+  if (!game.running || pressed || player.stunT > 0 || BICHO.mktOpen || BICHO.mgOpen) return;
   pressed = true;
   const a = ctxAction();
   if (a.type === 'dismount'){ BICHO.dismount(); return; }
@@ -4970,7 +4970,7 @@ function setFP(on){
   else if (document.pointerLockElement) document.exitPointerLock();
 }
 function update(dt){
-  if (BICHO.mktOpen) return;
+  if (BICHO.mktOpen || BICHO.mgOpen) return;
   now += dt;
   updateHearts(dt); updateLeaves(dt);
   if (game.running){ checkMission(dt); if (!(game.mis && !game.mis.done) && !SALE.on){ game.t -= dt; if (game.t <= 0 && game.running){ game.t = 0; if (!SALE.start()) endDay(); } } }
@@ -4998,7 +4998,7 @@ function update(dt){
   let running = false;
   if (wantRun && !p.tired && p.stam > 0){ running = true; p.stam = Math.max(0, p.stam - dt/(3.5*(plLevel() >= 5 ? 1.5 : 1))); if (p.stam <= 0) p.tired = true; }
   else { p.stam = Math.min(1, p.stam + dt/5); if (p.stam > .35) p.tired = false; }
-  const speed = (FARM.buffT > now ? 1.2 : 1)*3.4*(1 + .1*save.lv.botina)*(1 + Math.min(.15, .015*(plLevel() - 1)))*Math.max(.45, 1 - carried/110)*(mud ? .5 : 1)*(running ? 1.45 : 1)*(p.horse ? 2.1 : 1);
+  const speed = (FARM.buffT > now ? 1.2 : 1)*3.4*(1 + .1*save.lv.botina)*(1 + Math.min(.15, .015*(plLevel() - 1)))*Math.max(.45, 1 - carried/110)*(mud ? .5 : 1)*(running ? 1.45 : 1)*(p.horse ? 2.1*BICHO.horseK() : 1);
   p.running = running && ml > .1;
   if (mud && ml > .1 && Math.random() < dt*10) spawnPart(M.dust, chipGeo, new V3(p.pos.x, .1, p.pos.z), new V3(rnd(-1, 1), rnd(1, 2.5), rnd(-1, 1)), .5);
   if (p.running && !mud && Math.random() < dt*9) spawnPart(M.dustPuff, smokeGeo, new V3(p.pos.x + rnd(-.2, .2), heightAt(p.pos.x, p.pos.z) + .1, p.pos.z + rnd(-.2, .2)), new V3(rnd(-.4, .4), rnd(.3, .8), rnd(-.4, .4)), .9);
@@ -5184,7 +5184,7 @@ function update(dt){
   const cgy = heightAt(camTarget.x, camTarget.z);
   camTargetY += (cgy - camTargetY)*Math.min(1, dt*4);
   if (fp){
-    camera.position.set(p.pos.x, floorAt(p.pos.x, p.pos.z) + 1.62 + (p.horse ? .62 : 0) + (p.moving ? Math.abs(Math.cos(p.walk))*.05 : 0), p.pos.z);
+    camera.position.set(p.pos.x, floorAt(p.pos.x, p.pos.z) + 1.62 + (p.horse ? .7 : 0) + (p.moving ? Math.abs(Math.cos(p.walk))*.05 : 0), p.pos.z);
     camera.rotation.order = 'YXZ'; camera.rotation.set(fpPitch, fpYaw + Math.PI, p.stunT > 0 ? Math.sin(now*9)*.12 : 0);
   } else {
     camera.position.set(camTarget.x, camTargetY + 6.2*far, camTarget.z + 10*far);
@@ -5828,7 +5828,6 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
       for (const [cx2, cz2] of [[x1 - 1.4, 37.6], [x1 - 1.2, 38.9]]) mesh(new THREE.CylinderGeometry(.2, .17, .45, 12), M.metal, cx2, y + .23, cz2);
       mesh(new THREE.CylinderGeometry(.19, .19, .02, 12), FM.corn, x1 - 1.4, y + .44, 37.6);
       solid(x1 - 1.85, x1 - .2, 35.9, 39.15);
-      mesh(new THREE.BoxGeometry(.4, .14, 1.4), FM.hay, x0 + .45, y + .5, 38.2); // feno no cocho da baia
       const bk = mesh(new THREE.CylinderGeometry(.22, .19, .32, 12), M.metal, x0 + 1.9, y + .16, 37.5); mesh(new THREE.CylinderGeometry(.2, .2, .02, 12), FM.water, x0 + 1.9, y + .3, 37.5); }
     // forcado e enxada encostados na parede
     for (const [tx, ang] of [[cx - 2.4, .15], [cx - 1.9, -.1]]){ const rod = mesh(new THREE.CylinderGeometry(.022, .022, 1.7, 6), FM.rail, tx, y + .85, z1 - .32); rod.rotation.x = ang; }
@@ -5947,8 +5946,8 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
   let pigDay = -1;
   FARM.stations.push({x:22.9, z:pigZ, r:1.6, btn:'Lavagem', ready:() => pigDay !== save.day && FARM.held === 'slop',
     hint:() => pigDay === save.day ? 'Os porcos já comeram hoje' : FARM.held === 'slop' ? 'dar a lavagem aos porcos' : 'Pegue a lavagem na varanda da casa',
-    act:() => { pigDay = save.day; drop(); slopFill.visible = true; noiseHit(.4, 'lowpass', 700, .2);
-      callTo('pig', i => [pigX + 1 + rnd(0, .2), pigZ + (i - 1.5)*.48], 15, pigX, pigZ); pay(8, 'Porcos alimentados', 23.5, pigZ); setTimeout(() => float('Oinc oinc!', new V3(26, 1.6, pigZ), '#ffc2b8'), 4500); }});
+    act:() => BICHO.mg.pourGame({title:'Lavagem dos porcos', hint:'Segure para despejar no cocho e solte na faixa verde', icon:'🐖', color:'#7a6a48', finish:sc => { pigDay = save.day; drop(); slopFill.visible = true; noiseHit(.4, 'lowpass', 700, .2);
+      callTo('pig', i => [pigX + 1 + rnd(0, .2), pigZ + (i - 1.5)*.48], 15, pigX, pigZ); pay(Math.round(4 + 8*sc), 'Porcos alimentados', 23.5, pigZ); setTimeout(() => float('Oinc oinc!', new V3(26, 1.6, pigZ), '#ffc2b8'), 4500); }})});
 
   // açude com patos, taboas e pedras
   { const cx = 33, cz = 38, rx = 6.5, rz = 4.3;
@@ -6210,40 +6209,76 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
     const bullAge = born => save.day - born;
     const bullScale = born => .62 + .5*Math.min(1, Math.max(0, bullAge(born))/3);
     // ---------- cavalo crioulo com sela ----------
+    // cavalo crioulo baio: peito fundo, pescoço arqueado com crina, cabeça comprida com olhos dos lados, pernas finas com boleto e casco
     function makeHorse(){
-      const g = new THREE.Group(), m = furMat('#6e4024', FUR2), dk = L('#241610', {roughness:.85});
-      const body = along(loft([[-.86, .06, .06, .06, 2, 1.3], [-.8, .2, .17, .24, 2.1, 1.3], [-.6, .25, .2, .31, 2.1, 1.27], [-.25, .24, .17, .34, 2.1, 1.24], [.15, .24, .18, .34, 2.1, 1.24], [.45, .24, .22, .32, 2.1, 1.27], [.66, .21, .23, .26, 2.05, 1.31], [.8, .14, .17, .16, 2, 1.37]], 30, 4));
-      const neck = along(loft([[0, .13, .18, .2, 2.1, 0], [.3, .1, .15, .14, 2.1, .03], [.62, .075, .11, .09, 2, .05]], 20, 3)); neck.rotateX(-.9); neck.translate(0, 1.38, .68);
-      g.add(new THREE.Mesh(merge([body, neck]), m));
-      const head = new THREE.Group(); head.position.set(0, 1.86, 1.06); g.add(head);
-      { const hg = along(loft([[0, .085, .09, .1, 2, 0], [.2, .075, .075, .085, 2.1, -.01], [.4, .065, .055, .07, 2, -.03], [.52, .058, .045, .055, 2, -.04]], 20, 3)); hg.rotateX(1.0); head.add(new THREE.Mesh(hg, m));
+      const g = new THREE.Group(), m = furMat('#7a4526', FUR2), dk = L('#1c1410', {roughness:.8}), hair = L('#17110d', {roughness:.75, side:THREE.DoubleSide});
+      const xf = (geo, rx, x, y, z) => { geo.rotateX(rx); geo.translate(x, y, z); return geo; };
+      // tronco: garupa redonda, barriga, cernelha e peito
+      const body = along(loft([[-.86, .05, .05, .05, 2, 1.27], [-.8, .17, .17, .2, 2.1, 1.25], [-.66, .25, .23, .3, 2.15, 1.22], [-.42, .245, .23, .29, 2.15, 1.18], [-.1, .25, .24, .3, 2.15, 1.16],
+        [.22, .25, .26, .31, 2.15, 1.17], [.48, .235, .3, .31, 2.1, 1.19], [.66, .21, .28, .3, 2.05, 1.18], [.78, .15, .2, .22, 2, 1.14], [.85, .07, .09, .1, 2, 1.1]], 32, 4));
+      const musc = [];
+      for (const sd of [-1, 1]){
+        musc.push(xf(new THREE.SphereGeometry(1, 18, 14).scale(.11, .3, .26), 0, sd*.14, 1.15, -.58)); // anca e coxa
+        musc.push(xf(new THREE.SphereGeometry(1, 18, 14).scale(.11, .3, .19), .25, sd*.15, 1.12, .52)); // paleta
+      }
+      // pescoço arqueado: sai da cernelha, sobe para a nuca
+      const neckGeo = along(loft([[0, .16, .19, .27, 2.1, 0], [.22, .13, .16, .21, 2.1, .02], [.46, .1, .13, .16, 2.1, .03], [.66, .085, .1, .12, 2, .02], [.76, .08, .09, .1, 2, .01]], 24, 3));
+      xf(neckGeo, -.92, 0, 1.3, .56);
+      g.add(new THREE.Mesh(merge([body, neckGeo, ...musc]), m));
+      // crina caindo para um lado ao longo do pescoço
+      { const ms = []; for (let k=0;k<=16;k++){ const t = k/16, L0 = .02 + t*.72, top = .19 - t*.1 + .015, h = .16 - t*.05;
+          const bx = new THREE.BoxGeometry(.03, h, .07); bx.rotateZ(.35); bx.translate(.035, .015 + top - h*.35, L0); ms.push(bx); }
+        const mg = merge(ms); xf(mg, -.92, 0, 1.3, .56); g.add(new THREE.Mesh(mg, hair)); }
+      // cabeça: testa larga, ganacha, focinho comprido e redondo
+      const NP = new V3(0, 1.3 + .76*Math.sin(.92), .56 + .76*Math.cos(.92));
+      const headP = new THREE.Group(); headP.position.copy(NP).add(new V3(0, .02, .02)); g.add(headP); const head = new THREE.Group(); head.rotation.x = 1.0; headP.add(head);
+      { const hg = along(loft([[0, .085, .1, .1, 2.2, 0], [.1, .095, .1, .12, 2.2, -.01], [.24, .08, .08, .095, 2.15, -.005], [.4, .066, .063, .074, 2.1, 0], [.52, .062, .058, .066, 2, .002], [.6, .058, .05, .055, 2, .004]], 24, 3));
+        const jaw = new THREE.SphereGeometry(1, 16, 12); jaw.scale(.085, .1, .12); jaw.translate(0, -.06, .1);
+        const nose = new THREE.SphereGeometry(1, 16, 12); nose.scale(.062, .055, .055); nose.translate(0, -.005, .59);
+        head.add(new THREE.Mesh(merge([hg, jaw, nose]), m));
+        const star = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 6), L('#efe6d6', {roughness:.8})); star.scale.set(.03, .012, .07); star.position.set(0, .098, .2); star.rotation.x = .02; head.add(star);
         for (const sd of [-1, 1]){
-          const e = new THREE.Mesh(new THREE.ConeGeometry(.03, .13, 6), m); e.position.set(sd*.05, .12, -.02); e.rotation.set(-.2, 0, -sd*.18); head.add(e);
-          const ey = new THREE.Mesh(new THREE.SphereGeometry(.022, 8, 6), eyeM); ey.position.set(sd*.078, -.02, .1); head.add(ey);
-          const ns = new THREE.Mesh(new THREE.SphereGeometry(.014, 6, 5), noseM); ns.position.set(sd*.03, -.43, .3); head.add(ns);
+          const ey = new THREE.Mesh(new THREE.SphereGeometry(.022, 12, 8), eyeM); ey.position.set(sd*.088, .045, .15); ey.scale.set(.7, 1, 1.15); head.add(ey);
+          const lid = new THREE.Mesh(new THREE.SphereGeometry(.026, 10, 6, 0, Math.PI*2, 0, Math.PI*.42), m); lid.position.copy(ey.position); lid.rotation.set(.15, 0, -sd*1.25); head.add(lid);
+          const ear = new THREE.ConeGeometry(.032, .12, 8); ear.scale(1, 1, .55); const er = new THREE.Mesh(ear, m); er.position.set(sd*.05, .11, -.02); er.rotation.set(-1.15, 0, -sd*.2); head.add(er);
+          const ns = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), noseM); ns.scale.set(.012, .018, .01); ns.position.set(sd*.032, .022, .638); ns.rotation.z = sd*.4; head.add(ns);
         }
-        const fl = new THREE.Mesh(new THREE.BoxGeometry(.05, .1, .08), dk); fl.position.set(0, .1, .05); fl.rotation.x = .4; head.add(fl);
+        const mouth = new THREE.Mesh(new THREE.BoxGeometry(.075, .006, .1), dk); mouth.position.set(0, -.045, .57); head.add(mouth);
+        const fl = new THREE.Mesh(new THREE.BoxGeometry(.06, .015, .13), hair); fl.position.set(0, .1, .04); fl.rotation.x = .25; head.add(fl); // topete
+        // cabresto de couro
+        const lt = L('#4a2a16', {roughness:.6});
+        for (const zz of [.42, .02]){ const r = new THREE.Mesh(new THREE.TorusGeometry(zz ? .072 : .1, .008, 4, 18), lt); r.position.set(0, zz ? 0 : .01, zz); head.add(r); }
+        for (const sd of [-1, 1]){ const st = new THREE.Mesh(new THREE.BoxGeometry(.01, .016, .42), lt); st.position.set(sd*.078, 0, .22); head.add(st); }
       }
-      { const ms = []; for (let k=0;k<=11;k++){ const t = k/11, b = new THREE.BoxGeometry(.035, .15, .1); b.rotateX(-.9); b.translate(0, 1.55 + t*.4, .6 + t*.42); ms.push(b); } g.add(new THREE.Mesh(merge(ms), dk)); }
-      const tl = new THREE.Group(); tl.position.set(0, 1.42, -.84); g.add(tl);
-      tl.add(new THREE.Mesh(tube([new V3(0, 0, 0), new V3(0, -.08, -.14), new V3(0, -.4, -.22), new V3(0, -.78, -.18)], .07, 12, 7, u => 1 - .35*u), dk));
-      const legs = [];
-      for (const [lx, lz, ly] of [[-.15, .56, 1.02], [.15, .56, 1.02], [-.15, -.6, 1.05], [.15, -.6, 1.05]]){
+      // rabo cheio, caindo da garupa
+      const tl = new THREE.Group(); tl.position.set(0, 1.4, -.85); g.add(tl);
+      tl.add(new THREE.Mesh(tube([new V3(0, 0, 0), new V3(0, -.05, -.07), new V3(0, -.28, -.11), new V3(0, -.58, -.1), new V3(0, -.86, -.06)], .045, 16, 9, u => .55 + 1.1*Math.sin(Math.min(1, u*1.25)*Math.PI*.55) - .55*u*u), hair));
+      // pernas: braço, joelho, canela fina, boleto e casco (pretas embaixo, como no baio)
+      const legs = [], legG = (len) => { const pts = [[0, 0], [.044, 0], [.042, .05], [.05, .1], [.04, .16], [.036, .3], [.037, .42], [.05, .5], [.046, .56], [.058, .7], [.075, .84], [.08, .95], [.06, len]].map(([r, y]) => new THREE.Vector2(r, y));
+        const gg = new THREE.LatheGeometry(pts, 12); gg.translate(0, -len, 0); return gg; };
+      for (const c of g.children) c.position.y += .08; // corpo mais alto, pernas mais longas
+      for (const [lx, lz, ly, back] of [[-.13, .52, 1.06, 0], [.13, .52, 1.06, 0], [-.14, -.62, 1.1, 1], [.14, -.62, 1.1, 1]]){
         const lg = new THREE.Group(); lg.position.set(lx, ly, lz); g.add(lg);
-        lg.add(new THREE.Mesh(limb(ly - .04, .11, .052, .047, 12), m));
-        const hf = new THREE.Mesh(new THREE.CylinderGeometry(.052, .064, .08, 10), hoofM); hf.position.y = -(ly - .06); lg.add(hf); legs.push(lg);
+        const lgeo = legG(ly - .03); if (back){ const p = lgeo.attributes.position; for (let i=0;i<p.count;i++){ const y = p.getY(i) + ly; if (y > .38 && y < .66) p.setZ(i, p.getZ(i) - .05*Math.sin((y - .38)/.28*Math.PI)); } lgeo.computeVertexNormals(); }
+        lg.add(new THREE.Mesh(lgeo, m));
+        const sock = new THREE.Mesh(new THREE.CylinderGeometry(.047, .052, .38, 12, 1, true), dk); sock.position.y = -(ly - .03) + .26; lg.add(sock);
+        const hf = new THREE.Mesh(new THREE.CylinderGeometry(.05, .064, .085, 12), hoofM); hf.position.y = -(ly - .045); lg.add(hf); legs.push(lg);
       }
-      // sela, pelego, estribos e rédea
-      const leather = L('#4a2a16', {roughness:.6}), blanket = L('#b5332a', {roughness:.9});
-      { const s = new THREE.Mesh(new THREE.BoxGeometry(.52, .03, .74), blanket); s.position.set(0, 1.44, .04); g.add(s); }
-      { const s = new THREE.Mesh(new THREE.BoxGeometry(.4, .08, .5), leather); s.position.set(0, 1.49, .04); g.add(s);
-        const pm = new THREE.Mesh(new THREE.BoxGeometry(.16, .12, .08), leather); pm.position.set(0, 1.56, .27); g.add(pm);
-        const cn = new THREE.Mesh(new THREE.BoxGeometry(.3, .12, .06), leather); cn.position.set(0, 1.56, -.2); g.add(cn); }
-      for (const sd of [-1, 1]){ const st = new THREE.Mesh(new THREE.BoxGeometry(.02, .48, .04), leather); st.position.set(sd*.27, 1.22, .06); g.add(st);
-        const ir = new THREE.Mesh(new THREE.TorusGeometry(.05, .009, 4, 10), M.metal); ir.position.set(sd*.28, .97, .06); ir.rotation.y = Math.PI/2; g.add(ir); }
-      g.add(new THREE.Mesh(tube([new V3(-.06, 1.48, 1.3), new V3(-.13, 1.58, .85), new V3(0, 1.6, .32), new V3(.13, 1.58, .85), new V3(.06, 1.48, 1.3)], .008, 24, 4), leather));
+      // sela crioula: pelego, arreio com cabeça e patilha, estribos e rédeas
+      const leather = L('#5a3218', {roughness:.55}), blanket = L('#7a2a22', {roughness:.95}), sheep = L('#e9e0cc', {roughness:1}), nBefore = g.children.length;
+      { const bl = new THREE.SphereGeometry(1, 20, 8, 0, Math.PI*2, 0, Math.PI*.42); bl.scale(.31, .2, .36); const blm = new THREE.Mesh(bl, blanket); blm.position.set(0, 1.25, .1); g.add(blm);
+        const seat = new THREE.SphereGeometry(1, 18, 10, 0, Math.PI*2, 0, Math.PI/2); seat.scale(.21, .07, .3); const st = new THREE.Mesh(seat, leather); st.position.set(0, 1.43, .1); g.add(st);
+        const pel = new THREE.SphereGeometry(1, 16, 8, 0, Math.PI*2, 0, Math.PI/2); pel.scale(.2, .05, .24); const pm = new THREE.Mesh(pel, sheep); pm.position.set(0, 1.48, .08); g.add(pm);
+        const pom = new THREE.Mesh(new THREE.CylinderGeometry(.03, .04, .09, 10), leather); pom.position.set(0, 1.52, .36); g.add(pom);
+        const can = new THREE.Mesh(new THREE.BoxGeometry(.26, .08, .04), leather); can.position.set(0, 1.51, -.17); can.rotation.x = -.3; g.add(can); }
+      for (const sd of [-1, 1]){ const sp = new THREE.Mesh(new THREE.BoxGeometry(.012, .42, .035), leather); sp.position.set(sd*.25, 1.2, .12); sp.rotation.z = sd*.06; g.add(sp);
+        const ir = new THREE.Mesh(new THREE.TorusGeometry(.045, .008, 5, 12), M.metal); ir.position.set(sd*.265, .97, .12); ir.rotation.y = Math.PI/2; g.add(ir);
+        const gi = new THREE.Mesh(new THREE.BoxGeometry(.012, .3, .05), leather); gi.position.set(sd*.24, 1.0, .25); g.add(gi); }
+      { const P = (x, y, z) => new V3(x, y, z), hp = NP.clone().add(new V3(0, -.42, .3));
+        g.add(new THREE.Mesh(tube([P(-.075, hp.y + .05, hp.z - .05), P(-.12, 1.55, .9), P(-.06, 1.56, .45), P(0, 1.55, .38), P(.06, 1.56, .45), P(.12, 1.55, .9), P(.075, hp.y + .05, hp.z - .05)], .007, 30, 4), leather)); }
+      for (let i=nBefore;i<g.children.length;i++) g.children[i].position.y += .08;
       g.traverse(o => { if (o.isMesh){ o.castShadow = true; o.receiveShadow = true; } });
-      return {g, head, legs, tail:tl};
+      return {g, head:headP, legs, tail:tl};
     }
     // ---------- cachorro caramelo ----------
     function makeDog(){
@@ -6310,12 +6345,14 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
       ready:() => save.milkDay !== save.day,
       hint:() => save.milkDay === save.day ? 'As vacas já foram ordenhadas hoje' : 'tirar leite das vacas',
       act:() => {
-        save.milkDay = save.day; persist(); player.crouchT = .4;
-        callTo('cow', i => [-17.1 - rnd(0, .2), 18.6 + i*1.25], 9, -15, 19.6);
-        const n = FARM.animals.filter(a => a.kind === 'cow').length, litros = 4*n;
-        float('Ordenhando…', headPos(), '#ffffff');
+        callTo('cow', i => [-17.1 - rnd(0, .2), 18.6 + i*1.25], 9, -15, 19.6); player.crouchT = .4;
+        B.mg.milkGame({finish:sc => {
+        save.milkDay = save.day; persist();
+        const n = FARM.animals.filter(a => a.kind === 'cow').length, cap = 4*n*(save.milkBoost === save.day ? 1.5 : 1), litros = Math.max(sc > 0 ? 1 : 0, Math.round(cap*sc));
+        float(save.milkBoost === save.day ? 'Vacas com feno: balde rende mais' : 'Ordenhando…', headPos(), '#ffffff');
         let k = 0; const drip = setInterval(() => { if (++k > 10){ clearInterval(drip); return; } spawnPart(milkMat, sprayGeo, new V3(-15.6, .45, 19.6 + rnd(-.3, .3)), new V3(rnd(-.3, .3), rnd(.2, .6), rnd(-.3, .3)), .6); }, 200);
         setTimeout(() => { save.inv.leite = (save.inv.leite || 0) + litros; persist(); gainXp(6); float('+' + litros + ' litros de leite (venda no mercado da vila)', new V3(-14.9, 2.3, 20), '#ffffff'); sfxSafe(500, 700, .1, 'sine', .05); }, 2400);
+        }});
       }});
 
     // ---------- abate no galinheiro (lado de fora da tela) ----------
@@ -6392,17 +6429,17 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
     // ---------- cria/remove os bichos conforme a compra ----------
     const unspawn = a => { scene.remove(a.g); FARM.animals.splice(FARM.animals.indexOf(a), 1); if (a.st){ const i = FARM.stations.indexOf(a.st); if (i >= 0) FARM.stations.splice(i, 1); } };
     const addPeacock = () => { const a = makePeacock(); pen(a, -12.6, -8.2, 21.2, 25.2); a.gk = 'hen'; a.pi = animalsOf('peacock').length - 1; a.penaDay = (save.penas || [])[a.pi]; if (a.penaDay === save.day) [3, 12, 21].forEach(i => { a.feathers[i].visible = false; });
-      a.pluck = () => { a.penaDay = save.day; if (!save.penas) save.penas = []; save.penas[a.pi] = save.day; save.inv.pena = (save.inv.pena || 0) + 3; persist(); gainXp(5); player.crouchT = .4; [3, 12, 21].forEach(i => { a.feathers[i].visible = false; }); peaCall();
+      a.pluck = (n = 3) => { a.penaDay = save.day; if (!save.penas) save.penas = []; save.penas[a.pi] = save.day; save.inv.pena = (save.inv.pena || 0) + n; persist(); gainXp(5); player.crouchT = .4; [3, 12, 21].slice(0, n).forEach(i => { a.feathers[i].visible = false; }); peaCall();
           for (let i=0;i<5;i++) spawnPart(featherMat, featBitGeo, new V3(a.x, .5, a.z), new V3(rnd(-1, 1), rnd(1, 2), rnd(-1, 1)), 1.4);
           a.fanT = 0; a.wait = 0; a.tx = rnd(-12.6, -9.5); a.tz = rnd(21.2, 25.2); a.hurry = 3.2;
-          float('+3 penas de pavão (venda no mercado da vila)', new V3(-7.2, 1.8, 23.6), '#9fd8ff'); }; };
+          float('+' + n + (n > 1 ? ' penas' : ' pena') + ' de pavão (venda no mercado da vila)', new V3(-7.2, 1.8, 23.6), '#9fd8ff'); }; };
     // porta do viveiro
     { const y = gy(-7.35, 23.6); for (const dz of [-.55, .55]) mesh(new THREE.BoxGeometry(.1, 2.2, .1), FM.rail, -7.3, y + 1.1, 23.6 + dz); mesh(new THREE.BoxGeometry(.1, .1, 1.2), FM.rail, -7.3, y + 2.2, 23.6); }
     const peaFree = () => animalsOf('peacock').filter(a => a.penaDay !== save.day);
     FARM.stations.push({x:-6.6, z:23.6, r:1.6, btn:'Penas', when:() => animalsOf('peacock').length > 0,
       ready:() => peaFree().length > 0,
       hint:() => peaFree().length ? 'tirar 3 penas do pavão pela porta do viveiro' : 'Os pavões já deram penas hoje (amanhã nascem de novo)',
-      act:() => { const a = peaFree()[0]; if (a) a.pluck(); }});
+      act:() => { const a = peaFree()[0]; if (a) B.mg.featherGame({finish:sc => { const n = Math.round(sc*3); if (n) a.pluck(n); else float('Nenhuma pena saiu. Tente de novo com mais jeito', new V3(-7.2, 1.8, 23.6), '#ffd0a0'); }}); }});
     B.sync = () => {
       for (const [kind, key, make, pb] of [['peacock', 'pavao', addPeacock], ['turkey', 'peru', () => { const a = makeTurkey(); pen(a, TP.x0 + .7, TP.x1 - .7, TP.z0 + .7, 20.6); }], ['rooster', 'galo', () => { const a = makeRooster(); pen(a, 8.6, 13.8, 16.8, 24.9); }]]){
         let have = animalsOf(kind);
@@ -6425,7 +6462,7 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
       player.pos.x += Math.cos(player.yaw)*.95; player.pos.z -= Math.sin(player.yaw)*.95; pushOut(player.pos); setPlayerTool(); B.clop(); };
     B.ridePose = () => {
       const R = PLAYER_BODY, H = B.horse;
-      player.grp.position.y += .6 + (H.spd ? Math.abs(Math.sin(H.ph))*.05*H.spd : 0);
+      player.grp.position.y += .68 + (H.spd ? Math.abs(Math.sin(H.ph))*.05*H.spd : 0);
       R.legL.rotation.x = R.legR.rotation.x = -.55; R.legL.rotation.z = .42; R.legR.rotation.z = -.42; R.kneeL.rotation.x = R.kneeR.rotation.x = 1.05;
       if (R.ankleL){ R.ankleL.rotation.x = R.ankleR.rotation.x = -.4; }
       if (R.U){ R.U.position.y = .95; R.U.position.x = 0; R.U.rotation.x = .06 + (H.spd > 1 ? .2 : 0); R.U.rotation.y = 0; R.U.rotation.z = 0; }
@@ -6552,6 +6589,259 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
     B.closeMkt = () => { B.mktOpen = false; ov.style.display = 'none'; pressed = false; if (document.activeElement) document.activeElement.blur(); };
     window.addEventListener('keydown', e => { if (B.mktOpen && (e.code === 'Escape' || e.code === 'KeyE')){ e.preventDefault(); B.closeMkt(); } });
 
+    // ======== minigames com os bichos (o mundo para enquanto joga) ========
+    { const st = document.createElement('style'); st.textContent = `
+.mg{position:absolute;inset:0;z-index:9;display:none;align-items:center;justify-content:center;background:rgba(8,20,10,.5);touch-action:none}
+.mg .mgc{position:relative;background:#f6f1d8;color:#2b2416;border-radius:18px;padding:12px 14px 14px;width:min(560px,94vw);box-shadow:0 10px 30px rgba(0,0,0,.4);text-align:center;font-family:Rubik,Arial,sans-serif}
+.mg h3{margin:2px 0 4px;font-family:'Lilita One','Arial Black',sans-serif;font-weight:400;font-size:24px;color:#2f5a24}
+.mg .mgt{font-size:14px;margin:0 0 8px;min-height:18px}
+.mg canvas{width:100%;height:auto;border-radius:12px;background:#cfe3b2;display:block}
+.mg .mgr{display:flex;gap:10px;justify-content:center;margin-top:10px}
+.mg .mgb{flex:1;max-width:220px;min-height:62px;border:0;border-radius:14px;background:#f2c43a;color:#2f2a10;font:700 20px Rubik,Arial,sans-serif;box-shadow:0 4px 0 #b88a1a;touch-action:none;user-select:none;-webkit-user-select:none}
+.mg .mgb:active,.mg .mgb.on{transform:translateY(3px);box-shadow:0 1px 0 #b88a1a}
+.mg .mgx{position:absolute;top:8px;right:10px;background:none;border:0;font:700 14px Rubik,Arial;color:#7a6a48}
+.mg .keys{font-size:12px;color:#7a6a48;margin-top:6px}
+@media (pointer:coarse){.mg .keys{display:none}}`; document.head.appendChild(st); }
+    const mgEl = document.createElement('div'); mgEl.className = 'mg'; mgEl.innerHTML = '<div class="mgc"><button class="mgx">Sair ✕</button><h3></h3><p class="mgt"></p><canvas width="520" height="230"></canvas><div class="mgr"></div><div class="keys"></div></div>';
+    (document.getElementById('stage') || document.body).appendChild(mgEl);
+    const mgCv = mgEl.querySelector('canvas'), mx = mgCv.getContext('2d'), mgT = mgEl.querySelector('.mgt'), mgRow = mgEl.querySelector('.mgr');
+    let G = null; // jogo aberto
+    const mgSay = t => { mgT.textContent = t; };
+    function mgOpen(game){
+      if (document.pointerLockElement) document.exitPointerLock(); for (const kk in keys) keys[kk] = false;
+      G = Object.assign({t:0, held:{}, done:false}, game); B.mgOpen = true;
+      mgEl.querySelector('h3').textContent = G.title; mgSay(G.hint || ''); mgEl.querySelector('.keys').textContent = G.keys || '';
+      mgRow.innerHTML = ''; for (const [id, label] of G.buttons){ const b = document.createElement('button'); b.className = 'mgb'; b.textContent = label; b.dataset.id = id;
+        const dn = e => { e.preventDefault(); b.classList.add('on'); mgPress(id, true); }, up = e => { e.preventDefault(); if (!b.classList.contains('on')) return; b.classList.remove('on'); mgPress(id, false); };
+        b.addEventListener('pointerdown', dn); b.addEventListener('pointerup', up); b.addEventListener('pointerleave', up); b.addEventListener('pointercancel', up); mgRow.appendChild(b); }
+      mgEl.style.display = 'flex'; let last = performance.now();
+      const t0 = performance.now(); const tick = ts => { if (!G) return; const nowT = performance.now(), dt = Math.min(.25, (nowT - last)/1000); last = nowT; G.t = (nowT - t0)/1000; /* tempo do relógio: celular lento não deixa o jogo mais lento */ if (G.update) G.update(dt); G.draw(mx, mgCv.width, mgCv.height); requestAnimationFrame(tick); };
+      requestAnimationFrame(tick);
+    }
+    function mgPress(id, down){ if (!G || G.done) return; if (down){ if (G.held[id]) return; G.held[id] = true; } else { if (!G.held[id]) return; G.held[id] = false; } if (G.input) G.input(id, down); }
+    function mgEnd(score, delay = 1.1){ if (!G || G.done) return; G.done = true; const g = G; setTimeout(() => { if (G !== g) return; mgClose(); g.finish(clamp(score, 0, 1)); }, delay*1000); }
+    function mgClose(){ G = null; B.mgOpen = false; mgEl.style.display = 'none'; pressed = false; for (const kk in keys) keys[kk] = false; if (document.activeElement) document.activeElement.blur(); }
+    mgEl.querySelector('.mgx').addEventListener('click', () => { if (G){ const g = G; mgClose(); if (g.cancel) g.cancel(); } });
+    const KEYMAP = {Space:'a', Enter:'a', KeyE:'a', ArrowUp:'a', KeyW:'a', ArrowLeft:'L', KeyA:'L', ArrowRight:'R', KeyD:'R'};
+    window.addEventListener('keydown', e => { if (!B.mgOpen) return; e.preventDefault(); e.stopPropagation(); if (e.code === 'Escape'){ const g = G; mgClose(); if (g && g.cancel) g.cancel(); return; } const id = KEYMAP[e.code]; if (id && G && G.buttons.some(b => b[0] === id)) mgPress(id, true); }, true);
+    window.addEventListener('keyup', e => { if (!B.mgOpen) return; e.preventDefault(); e.stopPropagation(); const id = KEYMAP[e.code]; if (id) mgPress(id, false); }, true);
+    // desenho
+    const rr = (g, x, y, w, h, r) => { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); };
+    const emo = (g, e, x, y, s) => { g.font = s + 'px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(e, x, y); };
+    const txt = (g, t, x, y, s, c = '#2b2416') => { g.font = '700 ' + s + 'px Rubik, Arial, sans-serif'; g.fillStyle = c; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(t, x, y); };
+    const bg = (g, w, h, top, bot) => { const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, top); gr.addColorStop(1, bot); g.fillStyle = gr; g.fillRect(0, 0, w, h); };
+
+    // 1) jogar a comida na hora certa (galinhas, perus, pavão, patos e peixes)
+    function throwGame(o){
+      const N = 6, n = Math.max(1, Math.min(6, o.count));
+      let k = 0, hits = 0, pos = 0, dir = 1, sp = .75, zone = [.4, .58], fx = [], msg = '', msgT = 0;
+      const newZone = () => { const w = Math.max(.1, .2 - k*.015), c = rnd(.15 + w/2, .85 - w/2); zone = [c - w/2, c + w/2]; };
+      newZone();
+      mgOpen({title:o.title, hint:o.hint, keys:'Espaço: jogar · Esc: sair', buttons:[['a', o.btn || 'Jogar']],
+        update(dt){ if (this.done) return; pos += dir*sp*dt; if (pos > 1){ pos = 1; dir = -1; } if (pos < 0){ pos = 0; dir = 1; } msgT -= dt; fx = fx.filter(f => (f.t += dt) < 1.2); },
+        input(id, down){ if (!down || this.done) return; const ok = pos >= zone[0] && pos <= zone[1]; k++; if (ok){ hits++; msg = pick(['Boa!', 'Isso!', 'Certinho!']); sfxSafe(620, 900, .07, 'triangle', .05); for (let i=0;i<10;i++) fx.push({x:rnd(.25, .75), y:rnd(.35, .6), t:-rnd(0, .2), a:rnd(0, 6.3)}); }
+          else { msg = 'Caiu longe…'; sfxSafe(260, 180, .1, 'sine', .04); } msgT = .8; sp = Math.min(1.6, sp + .13); newZone();
+          mgSay(k < N ? 'Punhado ' + (k + 1) + ' de ' + N + ' · acertos: ' + hits : (hits >= 5 ? 'Comeram tudo! ' : hits >= 3 ? 'Comeram bem. ' : 'Comeram pouco. ') + hits + ' de ' + N);
+          if (k >= N) mgEnd(hits/N); },
+        draw(g, w, h){
+          bg(g, w, h, o.water ? '#7fb6c9' : '#cfe3b2', o.water ? '#3f7c8f' : '#a9c77f');
+          if (o.water){ g.strokeStyle = 'rgba(255,255,255,.25)'; for (let i=0;i<6;i++){ g.beginPath(); const yy = 40 + i*24 + Math.sin(this.t*2 + i)*3; g.moveTo(0, yy); for (let x=0;x<=w;x+=20) g.lineTo(x, yy + Math.sin(x*.05 + this.t*3 + i)*3); g.stroke(); } }
+          // os bichos esperando (pulam quando a comida cai)
+          for (let i=0;i<n;i++){ const x = w*(.5 + (i - (n - 1)/2)*.14), jump = fx.length ? Math.abs(Math.sin(this.t*9 + i))*12 : Math.abs(Math.sin(this.t*2 + i))*3;
+            emo(g, o.icon, x, (o.water ? 120 : 110) - jump, o.water ? 34 : 40); }
+          for (const f of fx){ if (f.t < 0) continue; g.fillStyle = o.grain || '#e8b830'; g.beginPath(); g.arc(f.x*w + Math.cos(f.a)*f.t*30, f.y*h - 60 + f.t*f.t*160, 4, 0, 7); g.fill(); }
+          // barra de força
+          const bx = 30, by = h - 46, bw = w - 60; rr(g, bx, by, bw, 22, 11); g.fillStyle = 'rgba(0,0,0,.25)'; g.fill();
+          rr(g, bx + zone[0]*bw, by, (zone[1] - zone[0])*bw, 22, 8); g.fillStyle = '#5bbf4a'; g.fill();
+          g.fillStyle = '#fff'; g.fillRect(bx + pos*bw - 3, by - 6, 6, 34);
+          txt(g, 'Punhado ' + Math.min(N, k + 1) + '/' + N, w - 70, 22, 15, '#fff'); txt(g, '✔ ' + hits, 50, 22, 16, '#fff');
+          if (msgT > 0) txt(g, msg, w/2, 36, 26, '#fff');
+        }, finish:o.finish, cancel:o.cancel});
+    }
+    // 2) despejar no cocho: segure e solte na faixa verde (vacas, touros, cavalo, cachorro, porcos)
+    function pourGame(o){
+      let lvl = 0, rate = .28, tries = 0, total = 0, lo = rnd(.55, .7), hi = lo + .18, pouring = false, msg = '', msgT = 0, spill = 0;
+      const N = 2;
+      const judge = () => { let sc; if (lvl > 1){ sc = .15; msg = 'Derramou!'; spill = 1; } else if (lvl >= lo && lvl <= hi){ sc = 1; msg = 'No ponto!'; } else if (lvl < lo){ sc = Math.max(0, 1 - (lo - lvl)*2.5); msg = 'Pouco…'; } else { sc = Math.max(.2, 1 - (lvl - hi)*4); msg = 'Muito!'; }
+        total += sc; tries++; msgT = 1; mgSay(tries < N ? 'Agora o outro lado do cocho' : 'Pronto! ' + Math.round(total/N*100) + '% no ponto');
+        if (tries >= N) mgEnd(total/N); else setTimeout(() => { if (G && !G.done){ lvl = 0; spill = 0; lo = rnd(.5, .72); hi = lo + .16; rate = .34; } }, 700); };
+      mgOpen({title:o.title, hint:o.hint, keys:'Segure Espaço e solte na faixa verde · Esc: sair', buttons:[['a', o.btn || 'Segure']],
+        update(dt){ if (pouring && !this.done){ lvl += rate*dt; rate += dt*.12; if (lvl > 1.08){ pouring = false; judge(); } } msgT -= dt; },
+        input(id, down){ if (this.done) return; if (down){ if (lvl === 0) pouring = true; } else if (pouring){ pouring = false; judge(); } },
+        draw(g, w, h){
+          bg(g, w, h, '#d9c79a', '#b79a66');
+          const tx = 70, ty = 70, tw = w - 140, th = 110;
+          // cocho de madeira por fora, comida subindo por dentro
+          g.fillStyle = '#7a5230'; rr(g, tx - 10, ty - 6, tw + 20, th + 16, 10); g.fill(); g.fillStyle = '#3e2a18'; g.fillRect(tx, ty, tw, th);
+          const f = Math.min(1, lvl); g.fillStyle = o.color || '#d8c060'; g.fillRect(tx, ty + th*(1 - f), tw, th*f);
+          for (let i=0;i<40;i++){ g.fillStyle = 'rgba(0,0,0,.08)'; g.fillRect(tx + (i*53)%tw, ty + th*(1 - f) + (i*37)%Math.max(1, th*f), 6, 2); }
+          if (spill){ g.fillStyle = o.color || '#d8c060'; for (let i=0;i<8;i++){ g.beginPath(); g.ellipse(tx - 20 + i*(tw + 40)/7, ty + th + 18, 18, 5, 0, 0, 7); g.fill(); } }
+          g.strokeStyle = '#5bbf4a'; g.lineWidth = 4; g.strokeRect(tx - 4, ty + th*(1 - hi), tw + 8, th*(hi - lo));
+          g.fillStyle = 'rgba(91,191,74,.18)'; g.fillRect(tx, ty + th*(1 - hi), tw, th*(hi - lo));
+          if (pouring){ g.fillStyle = o.color || '#d8c060'; g.fillRect(w/2 - 8, 0, 16, ty + th*(1 - f)); for (let i=0;i<6;i++){ g.beginPath(); g.arc(w/2 + rnd(-14, 14), rnd(0, ty), 3, 0, 7); g.fill(); } }
+          emo(g, o.icon, 42, 40 + Math.sin(this.t*3)*3, 40); emo(g, o.icon, w - 42, 40 + Math.cos(this.t*3)*3, 40);
+          txt(g, 'Cocho ' + Math.min(N, tries + 1) + '/' + N, w/2, 24, 16, '#fff');
+          if (msgT > 0) txt(g, msg, w/2, 52, 26, '#fff');
+        }, finish:o.finish, cancel:o.cancel});
+    }
+    // 3) ordenha: aperte uma teta de cada vez, no ritmo, sem irritar a vaca
+    function milkGame(o){
+      const DUR = 12, GOAL = 26; let good = 0, lastSide = null, lastT = -1, pat = 1, squeeze = {L:0, R:0}, msg = '', msgT = 0, kicked = false;
+      mgOpen({title:'Ordenha', hint:'Aperte uma teta de cada vez (esquerda, direita…) sem pressa demais', keys:'← e → (ou A e D) · Esc: sair', buttons:[['L', '◀ Esquerda'], ['R', 'Direita ▶']],
+        update(dt){ if (this.done) return; pat = Math.min(1, pat + dt*.12); squeeze.L = Math.max(0, squeeze.L - dt*4); squeeze.R = Math.max(0, squeeze.R - dt*4); msgT -= dt;
+          if (this.t >= DUR){ mgSay('Balde ' + Math.round(Math.min(1, good/GOAL)*100) + '% cheio'); mgEnd(good/GOAL, .9); } },
+        input(id, down){ if (!down || this.done) return; squeeze[id] = 1; const nowR = performance.now()/1000, gap = nowR - lastT;
+          if (id === lastSide){ pat -= .3; msg = 'Muuu! A mesma teta não!'; msgT = .9; sfxSafe(160, 120, .18, 'sawtooth', .05); }
+          else if (gap < .16){ pat -= .18; msg = 'Calma, devagar!'; msgT = .7; }
+          else { good++; sfxSafe(900, 1200, .03, 'sine', .03); }
+          lastSide = id; lastT = nowR;
+          if (pat <= 0 && !kicked){ kicked = true; good *= .5; msg = 'Coice! Derramou metade do balde'; msgT = 2; sfxSafe(120, 60, .3, 'square', .06); mgSay('A vaca deu um coice no balde…'); mgEnd(good/GOAL, 1.6); } },
+        draw(g, w, h){
+          bg(g, w, h, '#e8e1d0', '#c9bda2');
+          // úbere e tetas
+          g.fillStyle = '#e8a79a'; g.beginPath(); g.ellipse(w/2, 30, 150, 60, 0, 0, Math.PI); g.fill();
+          for (const [sd, id] of [[-1, 'L'], [1, 'R']]){ const x = w/2 + sd*55, sq = squeeze[id], len = 46 - sq*10;
+            g.fillStyle = '#d98f84'; rr(g, x - 13 + sq*3, 70, 26 - sq*6, len, 12); g.fill();
+            if (sq > .5){ g.strokeStyle = '#fffdf6'; g.lineWidth = 5; g.beginPath(); g.moveTo(x, 70 + len); g.lineTo(w/2 + sd*12, 170); g.stroke(); } }
+          // balde
+          const f = Math.min(1, good/GOAL); g.fillStyle = '#9aa3aa'; g.beginPath(); g.moveTo(w/2 - 60, 150); g.lineTo(w/2 + 60, 150); g.lineTo(w/2 + 48, 222); g.lineTo(w/2 - 48, 222); g.closePath(); g.fill();
+          g.fillStyle = '#fbfaf5'; g.fillRect(w/2 - 50 + 8*(1 - f), 220 - 66*f, 100 - 16*(1 - f), 66*f);
+          // paciência da vaca e tempo
+          txt(g, 'Paciência', 70, 160, 13); rr(g, 22, 172, 96, 14, 7); g.fillStyle = 'rgba(0,0,0,.2)'; g.fill(); rr(g, 22, 172, 96*Math.max(0, pat), 14, 7); g.fillStyle = pat > .4 ? '#5bbf4a' : '#d8503a'; g.fill();
+          txt(g, Math.max(0, Math.ceil(DUR - this.t)) + ' s', w - 60, 170, 22); emo(g, '🐄', w - 60, 120, 40);
+          if (msgT > 0) txt(g, msg, w/2, 128, 20, '#7a2a22');
+        }, finish:o.finish, cancel:o.cancel});
+    }
+    // 4) penas do pavão: puxe com jeito e solte na faixa verde
+    function featherGame(o){
+      const N = 3; let k = 0, got = 0, ten = 0, pulling = false, lo = .55, hi = .78, sp = .55, msg = '', msgT = 0;
+      const next = () => { lo = rnd(.45, .66); hi = lo + Math.max(.12, .22 - k*.03); ten = 0; sp = rnd(.5, .8); };
+      const judge = () => { k++; if (ten >= lo && ten <= hi){ got++; msg = 'Saiu inteira!'; sfxSafe(800, 1100, .06, 'triangle', .05); } else if (ten < lo){ msg = 'Puxou fraco, a pena ficou'; } else { msg = 'Puxou forte! O pavão gritou'; sfxSafe(500, 300, .2, 'sawtooth', .04); }
+        msgT = 1; mgSay(k < N ? 'Pena ' + (k + 1) + ' de ' + N : got + (got === 1 ? ' pena boa' : ' penas boas')); if (k >= N) mgEnd(got/N); else setTimeout(() => { if (G && !G.done) next(); }, 650); };
+      next();
+      mgOpen({title:'Penas do pavão', hint:'Segure para puxar e solte quando a força estiver no verde', keys:'Segure Espaço e solte no verde · Esc: sair', buttons:[['a', 'Puxar']],
+        update(dt){ msgT -= dt; if (pulling && !this.done){ ten += sp*dt; sp += dt*.5; if (ten > 1){ pulling = false; ten = 1.01; judge(); } } },
+        input(id, down){ if (this.done) return; if (down){ if (ten === 0) pulling = true; } else if (pulling){ pulling = false; judge(); } },
+        draw(g, w, h){
+          bg(g, w, h, '#2f5a48', '#1d3a30');
+          // leque de penas com olhos
+          for (let i=0;i<9;i++){ const a = -Math.PI*.9 + i*Math.PI*.8/8, L2 = 120 + (i === 4 ? ten*30 : 0), x = w/2 + Math.cos(a)*L2, y = 200 + Math.sin(a)*L2;
+            g.strokeStyle = '#5a7a3a'; g.lineWidth = 3; g.beginPath(); g.moveTo(w/2, 200); g.lineTo(x, y); g.stroke();
+            g.fillStyle = '#2f8a6a'; g.beginPath(); g.ellipse(x, y, 16, 22, a + Math.PI/2, 0, 7); g.fill(); g.fillStyle = '#d8b030'; g.beginPath(); g.arc(x, y, 9, 0, 7); g.fill(); g.fillStyle = '#1f3f8a'; g.beginPath(); g.arc(x, y, 5, 0, 7); g.fill(); }
+          emo(g, '🦚', w/2, 196, 44);
+          const bx = 40, by = h - 30, bw = w - 80; rr(g, bx, by, bw, 18, 9); g.fillStyle = 'rgba(255,255,255,.2)'; g.fill();
+          rr(g, bx + lo*bw, by, (hi - lo)*bw, 18, 6); g.fillStyle = '#5bbf4a'; g.fill(); g.fillStyle = '#fff'; g.fillRect(bx + Math.min(1, ten)*bw - 3, by - 6, 6, 30);
+          txt(g, 'Pena ' + Math.min(N, k + 1) + '/' + N + ' · ✔ ' + got, w/2, 20, 16, '#fff');
+          if (msgT > 0) txt(g, msg, w/2, 48, 22, '#fff');
+        }, finish:o.finish, cancel:o.cancel});
+    }
+    B.mg = {throwGame, pourGame, milkGame, featherGame};
+
+    // ======== comida de cada bicho: fica no paiol; pega lá e leva até o bicho ========
+    if (!save.fed) save.fed = {};
+    const fedToday = k => save.fed[k] === save.day;
+    const FOODS = [
+      {k:'feno', nome:'Feno', para:'vacas e garrotes', cor:'#d8c060', has:() => true},
+      {k:'aveia', nome:'Aveia', para:'cavalo', cor:'#c9a86a', has:() => own('cavalo') > 0},
+      {k:'milho', nome:'Milho', para:'galinhas e galos', cor:'#f2c43a', has:() => true},
+      {k:'racaoPeru', nome:'Ração de peru', para:'perus', cor:'#b58a4a', has:() => own('peru') > 0},
+      {k:'sementes', nome:'Sementes', para:'pavão', cor:'#8a6a3a', has:() => own('pavao') > 0},
+      {k:'racaoCao', nome:'Ração de cachorro', para:'Caramelo', cor:'#8a4a2a', has:() => own('cachorro') > 0},
+      {k:'quirera', nome:'Quirera', para:'patos do açude', cor:'#e8c860', has:() => true},
+      {k:'racaoPeixe', nome:'Ração de peixe', para:'peixes do açude', cor:'#a3402a', has:() => true},
+    ];
+    const foodOf = k => FOODS.find(f => f.k === k), heldFood = () => FARM.held && String(FARM.held).startsWith('feed:') ? FARM.held.slice(5) : null;
+    const FOOD_MESH = {};
+    const foodMesh = f => { if (FOOD_MESH[f.k]) return FOOD_MESH[f.k];
+      const g = new THREE.Group(), sg = new THREE.SphereGeometry(1, 12, 8); sg.scale(.16, .2, .11); const sk = new THREE.Mesh(sg, L('#d8c79a', {roughness:.95})); g.add(sk);
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(.155, .155, .07, 12, 1, true), L(f.cor, {roughness:.7, side:THREE.DoubleSide})); band.scale.z = .7; g.add(band);
+      const tie = new THREE.Mesh(new THREE.CylinderGeometry(.03, .05, .08, 8), L('#a08a5a')); tie.position.y = .21; g.add(tie);
+      g.traverse(o => { if (o.isMesh) o.castShadow = true; }); return (FOOD_MESH[f.k] = g); };
+    const takeFood = f => { if (FARM.held) drop(); FARM.held = 'feed:' + f.k; FARM.heldMesh = foodMesh(f); noiseHit(.2, 'lowpass', 1400, .12); float(f.nome + ' na mão: leve para ' + f.para, headPos(), '#fff1a8'); };
+    // escolher a comida no paiol
+    const fov = document.createElement('div'); fov.className = 'overlay'; fov.style.display = 'none'; fov.style.zIndex = '9'; fov.innerHTML = '<div class="card" id="foodCard"></div>'; (document.getElementById('stage') || document.body).appendChild(fov);
+    function renderFood(){
+      let h = '<h2>Comida dos bichos</h2><p class="small">Pegue a comida certa e leve até o cocho de cada bicho. Cada um come uma vez por dia.</p><div class="shop">';
+      for (const f of FOODS){ if (!f.has()) continue; const done = f.k === 'feno' ? fedToday('feno') && (fedToday('fenoG') || !animalsOf('bull').length) : fedToday(f.k), hold = heldFood() === f.k;
+        h += '<div class="up"><div class="up-txt"><strong>' + f.nome + '</strong><span>Para ' + f.para + (done ? ' · <b>já comeram hoje</b>' : '') + '</span></div><button class="buy" data-k="' + f.k + '"' + (done || hold ? ' disabled' : '') + '>' + (hold ? 'Na mão' : 'Pegar') + '</button></div>'; }
+      h += '</div><button class="btn" id="foodClose">Voltar</button>';
+      const c = fov.querySelector('#foodCard'); c.innerHTML = h;
+      c.querySelectorAll('.buy').forEach(b => b.addEventListener('click', () => { takeFood(foodOf(b.dataset.k)); closeFood(); }));
+      c.querySelector('#foodClose').addEventListener('click', closeFood);
+    }
+    const openFood = () => { if (document.pointerLockElement) document.exitPointerLock(); for (const kk in keys) keys[kk] = false; B.mktOpen = true; renderFood(); fov.style.display = 'flex'; const b = fov.querySelector('.buy:not([disabled])') || fov.querySelector('#foodClose'); if (b) b.focus(); };
+    const closeFood = () => { B.mktOpen = false; fov.style.display = 'none'; pressed = false; if (document.activeElement) document.activeElement.blur(); };
+    window.addEventListener('keydown', e => { if (fov.style.display !== 'none' && (e.code === 'Escape' || e.code === 'KeyE')){ e.preventDefault(); closeFood(); } });
+    FARM.stations.push({x:-17.3, z:37.4, r:1.7, btn:'Comida',
+      ready:() => !player.carry.length && (!FARM.held || !!heldFood()), hint:() => player.carry.length || (FARM.held && !heldFood()) ? 'Mãos ocupadas' : heldFood() ? 'trocar ou guardar a comida (' + foodOf(heldFood()).nome + ')' : 'pegar a comida dos bichos',
+      act:() => openFood()});
+
+    // peixes do açude (tilápias nadando no raso)
+    const LAKE = {x:33, z:38, rx:6.5, rz:4.3}, FISH = [];
+    { const fm = L('#7c8a86', {roughness:.35, metalness:.2}), fin = L('#5a6460', {roughness:.5, side:THREE.DoubleSide});
+      for (let i=0;i<9;i++){ const g = new THREE.Group(), b = new THREE.SphereGeometry(1, 12, 8); b.scale(.055, .05, .15); g.add(new THREE.Mesh(b, fm));
+        const t = new THREE.Mesh(new THREE.ConeGeometry(.06, .1, 4).rotateX(-Math.PI/2), fin); t.scale.x = .3; t.position.z = -.17; g.add(t);
+        const d = new THREE.Mesh(new THREE.ConeGeometry(.03, .08, 3), fin); d.scale.z = 2; d.position.set(0, .05, 0); g.add(d);
+        const a = rnd(0, 6.3), r = rnd(.2, .8); const f = {g, x:LAKE.x + Math.cos(a)*LAKE.rx*r, z:LAKE.z + Math.sin(a)*LAKE.rz*r, yaw:rnd(0, 6.3), sp:rnd(.3, .6), turn:0, jump:-1, tx:null, tz:null};
+        g.position.set(f.x, -1, f.z); scene.add(g); FISH.push(f); } }
+    // a água do açude fica um pouco transparente para ver os peixes
+    scene.traverse(o => { if (o.isMesh && o.material === FM.water && o.geometry.type === 'BufferGeometry' && Math.abs(o.position.x - LAKE.x) < .01 && Math.abs(o.position.z - LAKE.z) < .01){ o.material = FM.water.clone(); o.material.transparent = true; o.material.opacity = .72; o.material.depthWrite = false; o.renderOrder = 2; } });
+    const lakeY = () => gy(LAKE.x, LAKE.z) + .09;
+    let fishFeed = 0, fishAt = null;
+    const inLake = (x, z, k = .82) => ((x - LAKE.x)/(LAKE.rx*k))**2 + ((z - LAKE.z)/(LAKE.rz*k))**2 < 1;
+    B.fishUpdate = dt => {
+      if (fishFeed > 0) fishFeed -= dt;
+      const y0 = lakeY();
+      for (const f of FISH){
+        let tx, tz;
+        if (fishFeed > 0 && fishAt){ tx = fishAt.x + Math.sin(f.yaw*3)*.5; tz = fishAt.z + Math.cos(f.yaw*2)*.4; }
+        else { f.turn = clamp(f.turn + rnd(-1, 1)*dt*2, -.9, .9); f.yaw += f.turn*dt; tx = f.x + Math.sin(f.yaw)*2; tz = f.z + Math.cos(f.yaw)*2; }
+        const want = Math.atan2(tx - f.x, tz - f.z); f.yaw = angLerp(f.yaw, want, Math.min(1, dt*(fishFeed > 0 ? 4 : 1.2)));
+        const sp = fishFeed > 0 ? 1.2 : f.sp, nx = f.x + Math.sin(f.yaw)*sp*dt, nz = f.z + Math.cos(f.yaw)*sp*dt;
+        if (inLake(nx, nz)){ f.x = nx; f.z = nz; } else f.yaw += Math.PI*.6;
+        let y = y0 - .07 + Math.sin(now*2 + f.sp*20)*.01;
+        if (f.jump >= 0){ f.jump += dt; const k = f.jump/.6; y = y0 - .05 + Math.sin(Math.min(1, k)*Math.PI)*.35; f.g.rotation.x = (k - .5)*1.6; if (k >= 1){ f.jump = -1; f.g.rotation.x = 0; spawnPart(milkMat, sprayGeo, new V3(f.x, y0 + .05, f.z), new V3(rnd(-.4, .4), rnd(.6, 1), rnd(-.4, .4)), .5); } }
+        else if (fishFeed > 0 && Math.random() < dt*.5) f.jump = 0;
+        f.g.position.set(f.x, y, f.z); f.g.rotation.y = f.yaw;
+      }
+    };
+
+    // onde cada bicho come (só aparece com a comida certa na mão)
+    const feedSpot = (k, x, z, r, verbo, start, fk = k) => FARM.stations.push({x, z, r, food:'feed:' + k, btn:'Dar', when:() => heldFood() === k,
+      ready:() => !fedToday(fk), hint:() => fedToday(fk) ? 'Já comeram hoje' : verbo, act:() => start()});
+    const fedDone = (k, sc, x, z, txt) => { drop(); save.fed[k] = save.day; persist(); const v = Math.round(6 + 14*sc); pay(v, txt, x, z); gainXp(Math.round(4 + 8*sc)); setTimeout(() => float('♥', new V3(x, 2.2, z), '#ff9ab8'), 1500); };
+    const nAnimals = k => animalsOf(k).length;
+    // cocho vazio dos garrotes (a comida vem do paiol) e comedouro dos perus
+    { const x = -34.1, z = 37.4, yy = gy(x, z); mesh(uvScale(new THREE.BoxGeometry(.6, .5, 2.2), 1, 2), FM.plank, x, yy + .25, z); }
+    const bullHay = free(new THREE.BoxGeometry(.46, .08, 2), FM.hay, -34.1, gy(-34.1, 37.4) + .48, 37.4); bullHay.visible = false;
+    { const x = 36.4, z = 15.9; mesh(uvScale(new THREE.BoxGeometry(1.6, .25, .4), 1, 1), FM.plank, x, gy(x, z) + .13, z); }
+    const turkCorn = free(new THREE.BoxGeometry(1.4, .04, .3), FM.corn, 36.4, gy(36.4, 15.9) + .27, 15.9); turkCorn.visible = false;
+    const horseOats = free(new THREE.BoxGeometry(.4, .08, 1.4), L('#c9a86a', {roughness:.9}), HPOST.x - 1.35, gy(HPOST.x, HPOST.z) + .47, HPOST.z); horseOats.visible = false;
+    const cowHay = free(new THREE.BoxGeometry(.5, .08, 2.2), FM.hay, -16.75, gy(-16.75, 23.75) + .48, 23.75); cowHay.visible = false;
+    const dogFood = free(new THREE.CylinderGeometry(.11, .11, .03, 12), L('#6a3a1a', {roughness:.8}), DOGH.x - .95, gy(DOGH.x - .95, DOGH.z - .55) + .09, DOGH.z - .55); dogFood.visible = false;
+    const fedShow = [cowHay, bullHay, turkCorn, horseOats, dogFood];
+    feedSpot('feno', -14.9, 23.75, 1.7, 'pôr feno no cocho das vacas', () => pourGame({title:'Feno para as vacas', hint:'Segure para encher o cocho e solte na faixa verde', icon:'🐄', color:'#d8c060',
+      finish:sc => { cowHay.visible = true; save.milkBoost = save.day; callTo('cow', i => [-16.75 - 1.4 - rnd(0, .25), 23.75 + (i - 1)*1.05], 20, -16.75, 23.75); fedDone('feno', sc, -15.5, 23.75, 'Vacas com feno: mais leite na ordenha'); }}));
+    feedSpot('feno', -32.7, 37.4, 1.7, 'pôr feno no cocho dos garrotes', () => pourGame({title:'Feno para os garrotes', hint:'Segure para encher o cocho e solte na faixa verde', icon:'🐂', color:'#d8c060',
+      finish:sc => { bullHay.visible = true; callTo('bull', i => [-34.1 - 1.3, 37.4 + (i - 1)*1.1], 20, -34.1, 37.4); fedDone('fenoG', sc, -33, 37.4, 'Garrotes alimentados'); }}), 'fenoG');
+    feedSpot('aveia', -22.2, 38.2, 1.6, 'dar aveia ao cavalo', () => pourGame({title:'Aveia para o cavalo', hint:'Segure para encher o cocho e solte na faixa verde', icon:'🐴', color:'#c9a86a',
+      finish:sc => { horseOats.visible = true; save.horseK = 1.08 + .14*sc; fedDone('aveia', sc, -22.5, 38.2, 'Cavalo alimentado: corre mais hoje'); }}));
+    feedSpot('milho', 12.5, 15, 1.6, 'jogar milho às galinhas', () => throwGame({title:'Milho para as galinhas', hint:'Jogue o punhado quando o marcador passar no verde', icon:'🐔', count:Math.max(3, nAnimals('hen')), grain:'#f2c43a',
+      finish:sc => { callTo('hen', k => { const a = k/12*Math.PI*2; return [12.5 + Math.cos(a)*.75, 17.6 + Math.sin(a)*.55]; }, 14, 12.5, 17.6); callTo('rooster', k => [11.5 + k*.6, 18.3], 14, 12.5, 17.6); if (sc >= .3) FARM.eggT = 12; fedDone('milho', sc, 12.5, 16, sc >= .3 ? 'Galinhas com milho: vão botar ovos' : 'Galinhas alimentadas'); }}));
+    feedSpot('racaoPeru', 36.4, 14.2, 1.6, 'jogar ração aos perus', () => throwGame({title:'Ração para os perus', hint:'Jogue o punhado quando o marcador passar no verde', icon:'🦃', count:nAnimals('turkey'), grain:'#b58a4a',
+      finish:sc => { turkCorn.visible = true; callTo('turkey', k => [35.4 + k*.7, 16.6], 16, 36.4, 15.9); fedDone('racaoPeru', sc, 36.4, 15, 'Perus alimentados'); }}));
+    feedSpot('sementes', -10.4, 19.6, 1.6, 'jogar sementes ao pavão', () => throwGame({title:'Sementes para o pavão', hint:'Jogue o punhado quando o marcador passar no verde', icon:'🦚', count:nAnimals('peacock'), grain:'#8a6a3a',
+      finish:sc => { callTo('peacock', k => [-10.4 + k*.8 - .4, 21.2], 14, -10.4, 20.4); for (const a of animalsOf('peacock')){ a.fanCool = 0; if (sc >= .8 && a.penaDay === save.day){ a.penaDay = -1; if (save.penas) save.penas[a.pi] = -1; a.feathers.forEach(f => { f.visible = true; }); } } fedDone('sementes', sc, -10.4, 20.2, sc >= .8 ? 'Pavão feliz: as penas cresceram de novo' : 'Pavão alimentado'); }}));
+    feedSpot('racaoCao', DOGH.x - .95, DOGH.z - 1.5, 1.5, 'pôr ração na tigela do Caramelo', () => pourGame({title:'Ração do Caramelo', hint:'Segure para encher a tigela e solte na faixa verde', icon:'🐕', color:'#8a4a2a',
+      finish:sc => { dogFood.visible = true; fedDone('racaoCao', sc, DOGH.x - .95, DOGH.z - .55, 'Caramelo alimentado'); }}));
+    feedSpot('quirera', 29.8, 33.2, 1.7, 'jogar quirera aos patos', () => throwGame({title:'Quirera para os patos', hint:'Jogue o punhado quando o marcador passar no verde', icon:'🦆', count:nAnimals('duck'), water:true, grain:'#e8c860',
+      finish:sc => { callTo('duck', k => [29.6 + k*.7, 35.9 + (k%2)*.3], 16, 29.8, 34); fedDone('quirera', sc, 29.8, 34, 'Patos alimentados'); }}));
+    feedSpot('racaoPeixe', 36.2, 33.2, 1.7, 'jogar ração aos peixes do açude', () => throwGame({title:'Ração para os peixes', hint:'Jogue o punhado quando o marcador passar no verde', icon:'🐟', count:6, water:true, grain:'#a3402a',
+      finish:sc => { fishAt = {x:36.2, z:35}; fishFeed = 10 + 10*sc; fedDone('racaoPeixe', sc, 36.2, 34, 'Peixes alimentados'); }}));
+    B.horseK = () => save.horseK && save.fed && save.fed.aveia === save.day ? save.horseK : 1;
+    B.fedReset = () => { for (const m of fedShow) m.visible = false; if (save.fed){ if (save.fed.feno === save.day) cowHay.visible = true; if (save.fed.fenoG === save.day) bullHay.visible = true; if (save.fed.aveia === save.day) horseOats.visible = true; if (save.fed.racaoPeru === save.day) turkCorn.visible = true; if (save.fed.racaoCao === save.day) dogFood.visible = true; } };
+    B.fedReset();
+
     // ---------- turistas: chegam pela estrada, pagam o ingresso na porteira e passeiam ----------
     const VR = [[-72, 12.3], [-20, 12.3], [.2, 12.3], [.2, 14.8, 1.5, 0, 22, 'pay'], [-5.4, 23.6, 5, -10.5, 23.6], [-5.4, 28.6], [-11.5, 29.5, 5, -24, 23], [-20, 34.4, 4, -23.7, 38.2], [-27.5, 34.2], [-31.6, 36.9, 6, -37.5, 39], [-27.5, 34.2], [-20, 34.6], [-11.5, 29.5], [.2, 29.5], [19, 29.5, 5, 14, 21], [31, 26.8, 5, 37.8, 19], [26.5, 31.2, 5, 33, 38], [.2, 30.5], [.2, 33.4, 4, 3, 38], [.2, 14.8], [.2, 12.3], [-76, 12.3]];
     const VLOOK = [['#e94f64', {cap:'#ffffff'}, 1], ['#3fb4c9', {mustache:false, hair:L('#3a2414'), pants:L('#3a4a6a')}, 0], ['#f2c94c', {cap:'#2c3e50'}, 1], ['#8e6bd8', {mustache:false, hair:L('#1e140c'), pants:L('#2f2f3a')}, 1], ['#4caf6a', {mustache:false}, 0], ['#ff8a3d', {cap:'#e94f64'}, 1]];
@@ -6615,6 +6905,7 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
 
     // ---------- atualização por quadro ----------
     B.update = dt => {
+      if (B.fishUpdate) B.fishUpdate(dt);
       const run = game.running;
       // pavão: abre o leque de vez em quando e as penas voltam no dia seguinte
       for (const a of FARM.animals){
@@ -6714,6 +7005,8 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
 function farmStation(){
   const p = player.pos;
   let best = null, bd = 1e9;
+  if (FARM.held) for (const s of FARM.stations){ if (s.food !== FARM.held || (s.when && !s.when())) continue; const d = Math.hypot(p.x - s.x, p.z - s.z); if (d < s.r && d < bd){ bd = d; best = s; } }
+  if (best) return best;
   for (const s of FARM.stations){ if (s.when && !s.when()) continue; const d = Math.hypot(p.x - s.x, p.z - s.z); if (d < s.r && d < bd){ bd = d; best = s; } }
   return best;
 }
