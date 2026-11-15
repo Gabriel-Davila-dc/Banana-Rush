@@ -242,7 +242,7 @@ const varietyAt = (x, z) => (x > 23.5 || z < -30) ? 'prata' : 'nanica';
 /* ---------- progresso salvo ---------- */
 const MAX_MODE = !!window.BANANAL_MAX || /[?&#]max(?![a-z])/.test(location.href);
 const SAVE_KEY = MAX_MODE ? 'bananal3d-max' : 'bananal3d-v1';
-const freshSave = () => ({day:1, money:0, best:0, total:0, lv:{foice:0, luva:0, botina:0, jaca:0, carreta:0, cafe:0, adubo:0, terra:0, cuidado:0, ajudante:0, trator:0, trator2:0, desumb:0, banho:0, ensaca:0, manejo:0, escora:0}, field:null, ach:{}, totalBunches:0, bichos:{pavao:0, cavalo:0, cachorro:0, galo:0, peru:0}, inv:{pena:0, leite:0, galoA:0, peruA:0}, touros:[]});
+const freshSave = () => ({day:1, money:0, best:0, total:0, lv:{foice:0, luva:0, botina:0, jaca:0, carreta:0, cafe:0, adubo:0, terra:0, cuidado:0, ajudante:0, trator:0, trator2:0, desumb:0, banho:0, ensaca:0, manejo:0, escora:0}, field:null, ach:{}, totalBunches:0, bichos:{pavao:0, cavalo:0, cachorro:0, galo:0, peru:0}, inv:{pena:0, leite:0, galoA:0, peruA:0, peixe:0}, touros:[]});
 let save = freshSave();
 try{ const s = JSON.parse(localStorage.getItem(SAVE_KEY)); if (s && s.lv){ save = Object.assign(freshSave(), s); save.lv = Object.assign(freshSave().lv, s.lv); save.bichos = Object.assign(freshSave().bichos, s.bichos || {}); save.inv = Object.assign(freshSave().inv, s.inv || {}); if (!Array.isArray(save.touros)) save.touros = []; } }catch(e){}
 // quem tinha a melhoria antiga "Cuidado do cacho" mantém as pessoas contratadas
@@ -5681,6 +5681,29 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
   const mesh = (geo, mat, x, y, z, shadow = true) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = shadow; m.receiveShadow = true; scene.add(m); statics.push(m); return m; };
   const free = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; scene.add(m); return m; };
   const uvScale = (g, sx, sy) => { const uv = g.attributes.uv; for (let i=0;i<uv.count;i++) uv.setXY(i, uv.getX(i)*sx, uv.getY(i)*sy); return g; };
+  // ax 'z': o comprimento vai no eixo z; 'x': no eixo x
+  function cocho(x, z, Lg, W, H, ax, opt = {}){
+    const y = gy(x, z), inner = cocho.inner || (cocho.inner = new THREE.MeshStandardMaterial({color:C('#4a3220'), roughness:.95})), sx = ax === 'x';
+    const put = (w, h, l, mat, lx, ly, lz, tilt = 0) => { const g = sx ? new THREE.BoxGeometry(l, h, w) : new THREE.BoxGeometry(w, h, l); uvScale(g, Math.max(1, l/1.2), 1);
+      const m = mesh(g, mat, x + (sx ? lz : lx), y + ly, z + (sx ? lx : lz)); if (tilt){ if (sx) m.rotation.x = -tilt; else m.rotation.z = tilt; } return m; };
+    if (opt.stone){
+      const t = .1; put(W, .1, Lg, FM.stone, 0, .05, 0);
+      for (const sd of [-1, 1]){ put(t, H, Lg, FM.stone, sd*(W/2 - t/2), H/2, 0); put(W - 2*t, H, t, FM.stone, 0, H/2, sd*(Lg/2 - t/2)); }
+      put(W - 2*t, .02, Lg - 2*t, FM.water, 0, H - .06, 0);
+      return y + H;
+    }
+    const lift = .1, t = .05, hh = H - lift;
+    for (const sd of [-1, 1]) put(W + .16, .09, .1, FM.post, 0, .045, sd*Lg*.36);                // dois pés atravessados
+    put(W - .06, .04, Lg - .06, inner, 0, lift + .02, 0);                                           // fundo escuro
+    for (const sd of [-1, 1]){
+      put(t, hh, Lg, FM.plank, sd*(W/2 - t/2), lift + hh/2, 0, -sd*.07);                           // laterais um pouco abertas
+      put(W - t, hh, t, FM.plank, 0, lift + hh/2, sd*(Lg/2 - t/2));                                // cabeceiras
+      put(.09, .035, Lg + .05, FM.post, sd*(W/2 - .01), H + .01, 0);                                // borda de cima
+      put(W + .04, .05, .025, M.metal, 0, lift + hh*.55, sd*Lg*.3);                                // cintas de ferro
+    }
+    if (opt.water) put(W - .14, .02, Lg - .14, FM.water, 0, H - .07, 0);
+    return y + H;
+  }
   // texturas
   const plankTex = tex(256, 256, (g, w, h) => {
     g.fillStyle = '#8b6a47'; g.fillRect(0, 0, w, h);
@@ -5819,7 +5842,7 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
     for (const [hx, hz, hy] of [[x1 - 1.1, 42.6, 0], [x1 - 1.1, 41.9, 0], [x1 - 1.1, 42.25, .5], [x1 - 2.4, 42.6, 0]]){ mesh(uvScale(new THREE.BoxGeometry(1.1, .5, .6), 1.4, 1), FM.hay, hx, gy(hx, hz) + .25 + hy, hz).rotation.y = Math.PI/2; }
     solid(x1 - 2.95, x1 - .2, 41.5, z1 - .2);
     for (const bz of [37.2, 39.2]){ mesh(uvScale(new THREE.BoxGeometry(2.4, 1.3, .08), 2, 1), FM.plank, x0 + 1.35, y + .65, bz); solid(x0, x0 + 2.6, bz - .06, bz + .06); }
-    { const tr = mesh(uvScale(new THREE.BoxGeometry(.5, .45, 1.6), 1, 1.5), FM.plank, x0 + .45, y + .22, 38.2); solid(x0, x0 + .75, 37.4, 39); }
+    { cocho(x0 + .45, 38.2, 1.6, .5, .45, 'z'); solid(x0, x0 + .75, 37.4, 39); }
     // sacos de ração dos bichos (milho e ração) empilhados na parede da direita, perto do portão
     { const sackT = tex(128, 128, (g, w, h) => { g.fillStyle = '#d8c79a'; g.fillRect(0, 0, w, h); for (let i=0;i<w;i+=3){ g.fillStyle = 'rgba(120,96,60,.18)'; g.fillRect(i, 0, 1, h); g.fillRect(0, i, w, 1); } g.fillStyle = '#2f6a3a'; g.font = 'bold 26px Arial'; g.textAlign = 'center'; g.fillText('RAÇÃO', w/2, h*.55); g.fillStyle = '#a3402a'; g.fillRect(w*.15, h*.68, w*.7, 6); }), sackM = L('#ffffff', {map:sackT, roughness:.95});
       // saco cheio: caixa arredondada, mais gordo no meio e amarrado nas pontas
@@ -5898,9 +5921,9 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
     const r = mesh(uvScale(new THREE.BoxGeometry(6, .1, 4.8), 3, 2.4), FM.roof, -36.8, y + 2.75, 29.1); r.rotation.x = .16;
     for (const [hx, hz] of [[-38.6, 30.2], [-37.3, 30.3]]) mesh(uvScale(new THREE.BoxGeometry(1.2, .55, .65), 1.5, 1), FM.hay, hx, gy(hx, hz) + .27, hz);
   }
-  { const x = -28, z = 30.6, y = gy(x, z); mesh(uvScale(new THREE.BoxGeometry(2.2, .5, .6), 2, 1), FM.plank, x, y + .25, z); mesh(new THREE.BoxGeometry(2.05, .02, .46), FM.water, x, y + .47, z, false); }
+  cocho(-28, 30.6, 2.2, .6, .5, 'x', {water:true}); // bebedouro das vacas
   const cochoX = -16.75, cochoZ = 23.75;
-  { const y = gy(cochoX, cochoZ); mesh(uvScale(new THREE.BoxGeometry(.7, .5, 2.4), 1, 2), FM.plank, cochoX, y + .25, cochoZ); }
+  cocho(cochoX, cochoZ, 2.4, .7, .5, 'z');
   let cowDay = -1, cowFeed = null, henFeed = null;
   // tira um cacho da mão do colhedor e põe deitado no cocho ou no chão
   const feedBunch = (x, y, z, ry) => { const c = player.carry.pop(); const b = makeBunch(c.q, false, c); b.rotation.set(0, ry, Math.PI/2); b.scale.setScalar(.95); b.position.set(x, y, z); b.traverse(o => { if (o.isMesh) o.castShadow = true; }); scene.add(b); return b; };
@@ -5941,7 +5964,7 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
   { const y = base(30.4, 32.8, 16.6, 19); for (const [px, pz] of [[30.5, 16.7], [30.5, 19], [32.7, 16.7], [32.7, 19]]) mesh(new THREE.BoxGeometry(.12, 1.5, .12), FM.post, px, y + .7, pz);
     const r = mesh(uvScale(new THREE.BoxGeometry(2.8, .08, 2.9), 1.4, 1.4), FM.roof, 31.6, y + 1.45, 17.85); r.rotation.z = .15; }
   const pigX = 24.75, pigZ = 20.2;
-  { const y = gy(pigX, pigZ); mesh(uvScale(new THREE.BoxGeometry(.6, .4, 1.8), 1, 1.5), FM.plank, pigX, y + .2, pigZ); }
+  cocho(pigX, pigZ, 1.8, .6, .4, 'z');
   const slopFill = free(new THREE.BoxGeometry(.46, .06, 1.65), FM.slop, pigX, gy(pigX, pigZ) + .38, pigZ); slopFill.visible = false;
   let pigDay = -1;
   FARM.stations.push({x:22.9, z:pigZ, r:1.6, btn:'Lavagem', ready:() => pigDay !== save.day && FARM.held === 'slop',
@@ -6413,7 +6436,7 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
     railFence(CU.x0, CU.x1, CU.z0, CU.z1, 4, 1.45);
     { const y = base(-41, -37.2, 41.4, 44.4); for (const [px, pz] of [[-41, 41.4], [-41, 44.4], [-37.2, 41.4], [-37.2, 44.4]]) mesh(new THREE.BoxGeometry(.16, 2.5, .16), FM.post, px, y + 1.2, pz);
       const r = mesh(uvScale(new THREE.BoxGeometry(4.6, .1, 3.8), 2.3, 1.9), FM.roof, -39.1, y + 2.45, 42.9); r.rotation.x = .14;
-      { const x = -34.1, z = 41, yy = gy(x, z); mesh(uvScale(new THREE.BoxGeometry(.6, .45, 1.6), 1, 1.5), FM.stone, x, yy + .22, z); mesh(new THREE.BoxGeometry(.46, .02, 1.45), FM.water, x, yy + .44, z, false); } }
+      cocho(-34.1, 41, 1.6, .6, .45, 'z', {stone:true}); }
     path(-20, 34.6, -27.5, 34.1, 1.6); path(-27.5, 34.1, -32.4, 36.6, 1.6);
 
     // ---------- casinha do cachorro, ao lado da casa ----------
@@ -6550,7 +6573,7 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
       ['peru', 'Peru', 150, 4, 'Vai para o galinheiro. Abata, limpe e asse no forno de barro.'],
       ['touro', 'Garrote', 700, 3, 'Bezerro nelore no pasto. Em 3 dias vira touro e você vende aqui por ' + fmtR(1300) + '.'],
     ];
-    const VENDA = [['pena', 'Penas de pavão', 'pena', 'penas', 15], ['leite', 'Leite fresco', 'litro', 'litros', 3], ['galoA', 'Galo assado', 'galo', 'galos', 120], ['peruA', 'Peru assado', 'peru', 'perus', 280]];
+    const VENDA = [['pena', 'Penas de pavão', 'pena', 'penas', 15], ['leite', 'Leite fresco', 'litro', 'litros', 3], ['galoA', 'Galo assado', 'galo', 'galos', 120], ['peruA', 'Peru assado', 'peru', 'perus', 280], ['peixe', 'Peixe fresco do açude', 'kg', 'kg', 14]];
     const TOURO = 1300;
     const adultBulls = () => (save.touros || []).filter(d => bullAge(d) >= 3);
     B.kinds = () => BX.filter(([k]) => k === 'touro' ? (save.touros || []).length : own(k)).length;
@@ -6558,7 +6581,7 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
     const row = (title, desc, act, label, dis) => '<div class="up"><div class="up-txt"><strong>' + title + '</strong><span>' + desc + '</span></div><button class="buy" data-a="' + act + '"' + (dis ? ' disabled' : '') + '>' + label + '</button></div>';
     function renderMkt(){
       const inv = save.inv; let h = '<h2>Mercado da Vila</h2><p class="small">Seu Lauro compra o que a fazendinha produz e vende bichos.</p><div class="shop"><div class="shop-head"><span>Vender</span><span class="money">' + fmtR(save.money) + '</span></div>';
-      for (const [k, nome, un, uns, pr] of VENDA){ const n = inv[k] || 0; h += row(nome, n ? n + ' ' + (n > 1 ? uns : un) + ' · ' + fmtR(pr) + ' cada' : 'Você não tem nenhum agora · ' + fmtR(pr) + ' cada', 'sell:' + k, n ? 'Vender ' + fmtR(n*pr) : 'Vender', !n); }
+      for (const [k, nome, un, uns, pr] of VENDA){ const n = inv[k] || 0; h += row(nome, n ? (k === 'peixe' ? n.toFixed(1).replace('.', ',') : n) + ' ' + (n > 1 ? uns : un) + ' · ' + fmtR(pr) + ' cada' : 'Você não tem nenhum agora · ' + fmtR(pr) + ' cada', 'sell:' + k, n ? 'Vender ' + fmtR(Math.round(n*pr)) : 'Vender', !n); }
       { const ad = adultBulls().length, all = (save.touros || []).length; h += row('Touro', ad ? ad + (ad > 1 ? ' touros prontos' : ' touro pronto') + ' para vender · ' + fmtR(TOURO) + ' cada' : all ? 'Seus garrotes ainda estão crescendo no pasto' : 'Compre um garrote e espere 3 dias', 'sell:touro', 'Vender ' + fmtR(TOURO), !ad); }
       h += '<div class="shop-sec">Comprar bichos</div>';
       for (const [k, nome, pr, max, desc] of BX){ const have = k === 'touro' ? (save.touros || []).length : own(k), full = have >= max;
@@ -6573,7 +6596,7 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
       if (op === 'sell'){
         let v = 0, txt = '';
         if (k === 'touro'){ const ad = adultBulls(); if (!ad.length) return; const i = save.touros.indexOf(ad[0]); save.touros.splice(i, 1); v = TOURO; txt = 'Touro vendido'; }
-        else { const it = VENDA.find(x => x[0] === k), n = save.inv[k] || 0; if (!n) return; v = n*it[4]; save.inv[k] = 0; txt = it[1] + ' vendido'; }
+        else { const it = VENDA.find(x => x[0] === k), n = save.inv[k] || 0; if (!n) return; v = Math.round(n*it[4]); save.inv[k] = 0; txt = it[1] + ' vendido'; }
         save.money += v; game.earned += v; gainXp(Math.max(3, Math.round(v/40))); persist(); coins(); toast(txt + ': +' + fmtR(v)); B.sync();
       } else {
         const it = BX.find(x => x[0] === k); if (!it || save.money < it[2]) return;
@@ -6807,14 +6830,14 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
     };
 
     // onde cada bicho come (só aparece com a comida certa na mão)
-    const feedSpot = (k, x, z, r, verbo, start, fk = k) => FARM.stations.push({x, z, r, food:'feed:' + k, btn:'Dar', when:() => heldFood() === k,
+    const feedSpot = (k, x, z, r, verbo, start, fk = k) => FARM.stations.push({x, z, r, food:'feed:' + k, btn:'Dar', fedKey:() => fk, when:() => heldFood() === k,
       ready:() => !fedToday(fk), hint:() => fedToday(fk) ? 'Já comeram hoje' : verbo, act:() => start()});
     const fedDone = (k, sc, x, z, txt) => { drop(); save.fed[k] = save.day; persist(); const v = Math.round(6 + 14*sc); pay(v, txt, x, z); gainXp(Math.round(4 + 8*sc)); setTimeout(() => float('♥', new V3(x, 2.2, z), '#ff9ab8'), 1500); };
     const nAnimals = k => animalsOf(k).length;
     // cocho vazio dos garrotes (a comida vem do paiol) e comedouro dos perus
-    { const x = -34.1, z = 37.4, yy = gy(x, z); mesh(uvScale(new THREE.BoxGeometry(.6, .5, 2.2), 1, 2), FM.plank, x, yy + .25, z); }
+    cocho(-34.1, 37.4, 2.2, .6, .5, 'z');
     const bullHay = free(new THREE.BoxGeometry(.46, .08, 2), FM.hay, -34.1, gy(-34.1, 37.4) + .48, 37.4); bullHay.visible = false;
-    { const x = 36.4, z = 15.9; mesh(uvScale(new THREE.BoxGeometry(1.6, .25, .4), 1, 1), FM.plank, x, gy(x, z) + .13, z); }
+    cocho(36.4, 15.9, 1.6, .42, .28, 'x');
     const turkCorn = free(new THREE.BoxGeometry(1.4, .04, .3), FM.corn, 36.4, gy(36.4, 15.9) + .27, 15.9); turkCorn.visible = false;
     const horseOats = free(new THREE.BoxGeometry(.4, .08, 1.4), L('#c9a86a', {roughness:.9}), HPOST.x - 1.35, gy(HPOST.x, HPOST.z) + .47, HPOST.z); horseOats.visible = false;
     const cowHay = free(new THREE.BoxGeometry(.5, .08, 2.2), FM.hay, -16.75, gy(-16.75, 23.75) + .48, 23.75); cowHay.visible = false;
@@ -6841,6 +6864,115 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
     B.horseK = () => save.horseK && save.fed && save.fed.aveia === save.day ? save.horseK : 1;
     B.fedReset = () => { for (const m of fedShow) m.visible = false; if (save.fed){ if (save.fed.feno === save.day) cowHay.visible = true; if (save.fed.fenoG === save.day) bullHay.visible = true; if (save.fed.aveia === save.day) horseOats.visible = true; if (save.fed.racaoPeru === save.day) turkCorn.visible = true; if (save.fed.racaoCao === save.day) dogFood.visible = true; } };
     B.fedReset();
+
+    // ======== pesca no açude: trapiche de madeira com vara encostada ========
+    { const x = 33, y = gy(33, 32.6) + .16;
+      mesh(uvScale(new THREE.BoxGeometry(1.3, .07, 2.4), 2, 3), FM.plank, x, y, 33.5);
+      for (const sx of [-.58, .58]) for (const zz of [32.5, 33.5, 34.5]) mesh(new THREE.CylinderGeometry(.06, .06, .7, 7), FM.post, x + sx, y - .3, zz);
+      // vara de bambu e balde de isca
+      const rod = mesh(new THREE.CylinderGeometry(.012, .022, 2.6, 6), FM.bark, 34.35, y + 1.1, 32.75); rod.rotation.z = -.28;
+      mesh(new THREE.CylinderGeometry(.13, .11, .24, 12), M.metal, 34.1, gy(34.1, 32.4) + .12, 32.4);
+      FARM.circles.push([34.35, 32.75, .15]); }
+    const SPECIES = [['Lambari', .08, .3, .35], ['Tilápia', .4, 1.4, .4], ['Traíra', .8, 2.4, .15], ['Carpa', 1.5, 4.5, .1]];
+    const pickFish = () => { let r = Math.random(); for (const sp of SPECIES){ if ((r -= sp[3]) <= 0) return sp; } return SPECIES[1]; };
+    const fishLeft = () => save.fishDay === save.day ? Math.max(0, 6 - (save.fishN || 0)) : 6;
+    function fishGame(o){
+      const sp = pickFish(), kg = +(sp[1] + Math.random()*(sp[2] - sp[1])).toFixed(1), heavy = clamp((kg - .1)/4, 0, 1);
+      let st = 'cast', wait = 0, bob = {x:.6, y:.55}, prog = 0, ten = .3, surge = 0, strikes = 0, msg = '', msgT = 0, biteT = 0, fishX = .6;
+      const setBtn = t => { const b = mgRow.querySelector('.mgb'); if (b) b.textContent = t; };
+      const startWait = extra => { st = 'wait'; wait = rnd(o.fed ? 1 : 2, o.fed ? 2.6 : 4.6) + (extra || 0); setBtn('Fisgar'); mgSay('Espere a boia afundar…'); };
+      mgOpen({title:'Pescaria no açude', hint:'Toque para lançar a linha', keys:'Espaço: lançar, fisgar e segurar para puxar · Esc: sair', buttons:[['a', 'Lançar']],
+        update(dt){ msgT -= dt; if (this.done) return;
+          if (st === 'wait'){ wait -= dt; if (wait <= 0){ st = 'bite'; biteT = .95; sfxSafe(420, 260, .12, 'sine', .05); mgSay('Fisgou! Aperte agora!'); } }
+          else if (st === 'bite'){ biteT -= dt; if (biteT <= 0){ st = 'gone'; msg = 'O peixe comeu a isca e fugiu'; msgT = 2; mgSay('Escapou…'); mgEnd(0, 1.4); } }
+          else if (st === 'reel'){ const holding = this.held.a; surge -= dt; if (surge <= 0){ surge = rnd(.6, 1.6); fishX = rnd(.25, .85); }
+            const tug = surge > 0 && surge < .45, pull = (.2 + heavy*.4)*(tug ? 1.8 : 1); if (tug && msgT <= 0){ msg = 'O peixe puxou! Solte um pouco'; msgT = .5; }
+            if (holding){ prog += (.22 - heavy*.07)*dt; ten += (.18 + pull*.3)*dt; } else { prog = Math.max(0, prog - .04*dt); ten -= .62*dt; }
+            ten = Math.max(0, ten); bob.x += (fishX - bob.x)*dt*1.5;
+            if (ten >= 1){ st = 'snap'; msg = 'A linha arrebentou!'; msgT = 2; sfxSafe(300, 80, .2, 'sawtooth', .05); mgSay('Puxou forte demais…'); mgEnd(0, 1.4); }
+            else if (prog >= 1){ st = 'won'; msg = sp[0] + ' de ' + String(kg).replace('.', ',') + ' kg!'; msgT = 3; sfxSafe(700, 1200, .15, 'triangle', .06); mgSay('Pegou um peixe!'); mgEnd(1, 1.6); } } },
+        input(id, down){ if (this.done) return;
+          if (st === 'cast' && down){ bob = {x:rnd(.45, .8), y:rnd(.45, .62)}; sfxSafe(500, 300, .1, 'sine', .04); startWait(); }
+          else if (st === 'wait' && down){ strikes++; msg = 'Puxou cedo, espantou o peixe'; msgT = 1.2; if (strikes >= 3){ mgSay('Os peixes fugiram da beira…'); mgEnd(0, 1.2); } else startWait(1); }
+          else if (st === 'bite' && down){ st = 'reel'; ten = .35; surge = .8; setBtn('Segure p/ puxar'); mgSay('Segure para puxar, solte quando a linha esticar demais'); } },
+        draw(g, w, h){
+          bg(g, w, h, '#86b9c9', '#3d7486');
+          g.strokeStyle = 'rgba(255,255,255,.22)'; for (let i=0;i<7;i++){ g.beginPath(); const yy = 30 + i*28; g.moveTo(0, yy); for (let x=0;x<=w;x+=20) g.lineTo(x, yy + Math.sin(x*.04 + this.t*2 + i)*3); g.stroke(); }
+          g.fillStyle = '#6a8a3a'; g.fillRect(0, 0, w, 14); for (let i=0;i<30;i++){ g.fillRect(i*18, 0, 3, 24 + (i%3)*6); }
+          const bx = bob.x*w, by = bob.y*h + (st === 'wait' ? Math.sin(this.t*3)*2 + (Math.sin(this.t*11) > .97 ? 4 : 0) : st === 'bite' ? 10 : 0);
+          // vara e linha
+          g.strokeStyle = '#7a5a2a'; g.lineWidth = 6; g.beginPath(); g.moveTo(-10, h - 10); g.lineTo(90, 40); g.stroke();
+          if (st !== 'cast'){ g.strokeStyle = 'rgba(255,255,255,.8)'; g.lineWidth = st === 'reel' ? 1 + ten*2 : 1; g.beginPath(); g.moveTo(90, 40); g.quadraticCurveTo((90 + bx)/2, st === 'reel' ? 60 : 110, bx, by); g.stroke();
+            if (st === 'reel' || st === 'won'){ emo(g, '🐟', bx, by + 6, 30 + heavy*16); }
+            else { g.fillStyle = '#d8302a'; g.beginPath(); g.arc(bx, by - 4, 7, Math.PI, 0); g.fill(); g.fillStyle = '#fff'; g.beginPath(); g.arc(bx, by + 2, 7, 0, Math.PI); g.fill();
+              g.strokeStyle = 'rgba(255,255,255,.5)'; g.beginPath(); g.ellipse(bx, by + 6, 14 + Math.sin(this.t*4)*3, 4, 0, 0, 7); g.stroke(); }
+            if (st === 'bite') txt(g, '!', bx, by - 34, 40, '#ffe14a'); }
+          if (st === 'reel'){
+            const tx = 30, tw = w - 60; txt(g, 'Linha', 60, h - 54, 13, '#fff'); rr(g, tx, h - 44, tw, 14, 7); g.fillStyle = 'rgba(0,0,0,.3)'; g.fill(); rr(g, tx, h - 44, tw*Math.min(1, ten), 14, 7); g.fillStyle = ten > .8 ? '#d8503a' : ten > .55 ? '#e8b030' : '#5bbf4a'; g.fill();
+            txt(g, 'Puxando', 66, h - 22, 13, '#fff'); rr(g, tx + 70, h - 28, tw - 70, 12, 6); g.fillStyle = 'rgba(0,0,0,.3)'; g.fill(); rr(g, tx + 70, h - 28, (tw - 70)*prog, 12, 6); g.fillStyle = '#9fd8ff'; g.fill(); }
+          if (msgT > 0) txt(g, msg, w/2, 40, 22, '#fff');
+        }, finish:sc => o.finish(sc, sp[0], kg), cancel:o.cancel});
+    }
+    B.mg.fishGame = fishGame;
+    FARM.stations.push({x:33, z:33.4, r:1.1, box:[32.4, 33.6, 32.6, 34.2], btn:'Pescar', icon:'🎣', label:'Pescar',
+      ready:() => fishLeft() > 0 && !player.carry.length && !FARM.held, hint:() => player.carry.length || FARM.held ? 'Mãos ocupadas' : fishLeft() ? 'pescar no açude (' + fishLeft() + ' peixes ainda mordem hoje)' : 'Os peixes não estão mordendo mais hoje',
+      act:() => fishGame({fed:fedToday('racaoPeixe'), finish:(sc, nome, kg) => { if (save.fishDay !== save.day){ save.fishDay = save.day; save.fishN = 0; } save.fishN++;
+        if (sc > 0){ save.inv.peixe = +((save.inv.peixe || 0) + kg).toFixed(1); persist(); gainXp(6 + Math.round(kg*4)); float('Pegou ' + (nome === 'Tilápia' || nome === 'Traíra' || nome === 'Carpa' ? 'uma ' : 'um ') + nome + ' de ' + String(kg).replace('.', ',') + ' kg (venda no mercado da vila)', new V3(33, 2.2, 34), '#9fd8ff'); }
+        else persist(); }})});
+
+    // ======== alcance pela borda do cocho (vale de qualquer lado) e cada ponto com o seu sinal ========
+    const BOXES = [
+      // [botão, x, z, caixa, folga]
+      ['Cacho', -14.9, cochoZ, [-17.1, -16.4, 22.55, 24.95], 1.7], ['Dar', -14.9, 23.75, [-17.1, -16.4, 22.55, 24.95], 1.7],
+      ['Dar', -32.7, 37.4, [-34.4, -33.8, 36.3, 38.5], 1.6], ['Dar', -22.2, 38.2, [-25.3, -24.8, 37.4, 39], 2.6],
+      ['Cacho', 12.5, 15, [10.5, 14.5, 15.6, 16.4], 1.4], ['Dar', 12.5, 15, [10.5, 14.5, 15.6, 16.4], 1.4],
+      ['Dar', 36.4, 14.2, [35.6, 37.2, 15.7, 16.1], 1.9], ['Dar', -10.4, 19.6, [-13.4, -7.4, 20.2, 20.6], 1.4],
+      ['Dar', DOGH.x - .95, DOGH.z - 1.5, [DOGH.x - 1.1, DOGH.x - .8, DOGH.z - .7, DOGH.z - .4], 1.5],
+      ['Dar', 29.8, 33.2, [28.4, 31.2, 32.9, 33.5], 1.3], ['Dar', 36.2, 33.2, [34.8, 37.6, 32.9, 33.5], 1.3],
+      ['Lavagem', 22.9, 20.2, [24.45, 25.05, 19.3, 21.1], 1.7], ['Comida', -17.3, 37.4, [-16.35, -14.7, 35.9, 39.15], 1.6],
+    ];
+    for (const s of FARM.stations){ const gd = Object.getOwnPropertyDescriptor(s, 'btn'); if (gd && gd.get){ s.icon = '🔥'; s.label = 'Forno'; } else if (s.btn === 'Pegar'){ s.icon = '🪣'; s.label = 'Lavagem'; } }
+    for (const s of FARM.stations){ const b = BOXES.find(q => q[0] === s.btn && Math.abs(q[1] - s.x) < .01 && Math.abs(q[2] - s.z) < .01); if (b){ s.box = b[3]; s.r = b[4]; } else if (s.r < 2 && !s.box && s.btn !== 'Mercado') s.r = Math.max(s.r, 1.9); }
+    // sinais: um balão com o desenho e o nome em cima de cada ponto onde dá para fazer algo
+    const FOOD_ICON = {feno:'🌾', aveia:'🌾', milho:'🌽', racaoPeru:'🌽', sementes:'🌻', racaoCao:'🦴', quirera:'🌽', racaoPeixe:'🐟'};
+    const BTN_ICON = {Pegar:'🪣', Beber:'💧', Cacho:'🍌', Ovos:'🥚', Lavagem:'🐖', Leite:'🥛', Abater:'🔪', Penas:'🪶', Montar:'🐴', Mercado:'🛒', Comida:'🌾', Assar:'🔥'};
+    const iconTex = new Map();
+    const makeIconTex = (ic, label) => { const key = ic + '|' + label; if (iconTex.has(key)) return iconTex.get(key);
+      const t = tex(256, 160, g => { g.clearRect(0, 0, 256, 160); g.fillStyle = 'rgba(0,0,0,.25)'; g.beginPath(); g.arc(128, 66, 54, 0, 7); g.fill(); g.fillStyle = '#fff8e2'; g.beginPath(); g.arc(128, 62, 52, 0, 7); g.fill(); g.strokeStyle = '#f2c43a'; g.lineWidth = 6; g.stroke();
+        g.font = '58px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(ic, 128, 66);
+        g.font = '700 28px Rubik, Arial, sans-serif'; const w = Math.min(240, g.measureText(label).width + 26); g.fillStyle = 'rgba(30,45,20,.85)'; g.beginPath(); g.moveTo(128 - w/2 + 14, 116); g.arcTo(128 + w/2, 116, 128 + w/2, 152, 16); g.arcTo(128 + w/2, 152, 128 - w/2, 152, 16); g.arcTo(128 - w/2, 152, 128 - w/2, 116, 16); g.arcTo(128 - w/2, 116, 128 + w/2, 116, 16); g.fill();
+        g.fillStyle = '#fff'; g.fillText(label, 128, 135); });
+      t.encoding = THREE.sRGBEncoding; iconTex.set(key, t); return t; };
+    const SIGNS = new Map(), ringGeo = new THREE.RingGeometry(.86, 1, 40).rotateX(-Math.PI/2), boxRingGeo = (() => { const g = new THREE.RingGeometry(.9, 1, 4, 1); g.rotateZ(Math.PI/4); g.rotateX(-Math.PI/2); return g; })();
+    const ringMat = new THREE.MeshBasicMaterial({color:0xffe14a, transparent:true, opacity:.75, depthWrite:false, side:THREE.DoubleSide});
+    const ringHi = new THREE.Mesh(ringGeo, ringMat); ringHi.visible = false; ringHi.renderOrder = 3; scene.add(ringHi);
+    const ringPool = []; const ringFor = i => { if (!ringPool[i]){ const m = new THREE.Mesh(ringGeo, ringMat); m.renderOrder = 3; scene.add(m); ringPool[i] = m; } return ringPool[i]; };
+    const signOf = s => { let o = SIGNS.get(s); if (o) return o;
+      const ic = s.food ? FOOD_ICON[s.food.slice(5)] : (s.icon || BTN_ICON[s.btn] || '✋'), label = s.food ? (FOODS.find(f => 'feed:' + f.k === s.food) || {}).nome : (s.label || s.btn);
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({map:makeIconTex(ic, label), transparent:true, depthWrite:false})); sp.scale.set(1.6, 1, 1); sp.renderOrder = 4; sp.visible = false; scene.add(sp);
+      o = {sp, label, ic}; SIGNS.set(s, o); return o; };
+    const sx = s => s.box ? (s.box[0] + s.box[1])/2 : s.x, sz = s => s.box ? (s.box[2] + s.box[3])/2 : s.z;
+    let signTick = 0;
+    B.signUpdate = dt => {
+      signTick -= dt; const p = player.pos, held = FARM.held, best = game.running ? farmStation() : null;
+      // anel no chão em volta do ponto onde a ação vai acontecer
+      if (best){ const w = best.box ? Math.max(best.box[1] - best.box[0], best.box[3] - best.box[2])/2 + .5 : .9; ringHi.visible = true; ringHi.position.set(sx(best), gy(sx(best), sz(best)) + .06, sz(best)); ringHi.scale.setScalar(w*(1 + Math.sin(now*6)*.04)); } else ringHi.visible = false;
+      ringMat.opacity = .55 + Math.sin(now*5)*.25;
+      if (signTick > 0){ for (const [s, o] of SIGNS) if (o.sp.visible) o.sp.position.y = o.y + Math.sin(now*2.2 + o.ph)*.06; return; }
+      signTick = .25; let ri = 0;
+      for (const s of FARM.stations){
+        const o = signOf(s); if (o.ph === undefined) o.ph = Math.random()*6;
+        let show = false, strong = false;
+        if (s.food){ const k = s.food.slice(5), f = FOODS.find(q => q.k === k); const fedK = s.fedKey ? s.fedKey() : null; show = f && f.has() && !(fedK ? fedToday(fedK) : false) && (heldFood() === k || !held); strong = heldFood() === k; }
+        else { show = (!s.when || s.when()) && (s.ready ? s.ready() : true); strong = false; }
+        const d = Math.hypot(sx(s) - p.x, sz(s) - p.z); if (d > 32 || (held && !strong && s.food)) show = false;
+        if (s.food && held && heldFood() && heldFood() !== s.food.slice(5)) show = false;
+        o.sp.visible = show && game.running;
+        if (o.sp.visible){ o.y = gy(sx(s), sz(s)) + (s.box ? 1.35 : 2.1); o.sp.position.set(sx(s), o.y, sz(s)); o.sp.material.opacity = strong || d < 9 ? 1 : .8; const k = (strong ? 1.3 : 1)*(1 + Math.max(0, d - 8)*.025); o.sp.scale.set(1.6*k, 1*k, 1);
+          if (strong && ri < 6){ const r = ringFor(ri++), w = s.box ? Math.max(s.box[1] - s.box[0], s.box[3] - s.box[2])/2 + .5 : .9; r.visible = true; r.position.set(sx(s), gy(sx(s), sz(s)) + .05, sz(s)); r.scale.setScalar(w); } }
+      }
+      for (let i=ri;i<ringPool.length;i++) if (ringPool[i]) ringPool[i].visible = false;
+    };
 
     // ---------- turistas: chegam pela estrada, pagam o ingresso na porteira e passeiam ----------
     const VR = [[-72, 12.3], [-20, 12.3], [.2, 12.3], [.2, 14.8, 1.5, 0, 22, 'pay'], [-5.4, 23.6, 5, -10.5, 23.6], [-5.4, 28.6], [-11.5, 29.5, 5, -24, 23], [-20, 34.4, 4, -23.7, 38.2], [-27.5, 34.2], [-31.6, 36.9, 6, -37.5, 39], [-27.5, 34.2], [-20, 34.6], [-11.5, 29.5], [.2, 29.5], [19, 29.5, 5, 14, 21], [31, 26.8, 5, 37.8, 19], [26.5, 31.2, 5, 33, 38], [.2, 30.5], [.2, 33.4, 4, 3, 38], [.2, 14.8], [.2, 12.3], [-76, 12.3]];
@@ -6905,7 +7037,7 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
 
     // ---------- atualização por quadro ----------
     B.update = dt => {
-      if (B.fishUpdate) B.fishUpdate(dt);
+      if (B.fishUpdate) B.fishUpdate(dt); if (B.signUpdate) B.signUpdate(dt);
       const run = game.running;
       // pavão: abre o leque de vez em quando e as penas voltam no dia seguinte
       for (const a of FARM.animals){
@@ -7002,12 +7134,13 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
     for (const b of by.values()){ const mm = new THREE.Mesh(merge(b.list), b.mat); mm.castShadow = b.cast; mm.receiveShadow = true; scene.add(mm); }
   }
 })();
+const stDist = (s, p) => s.box ? Math.hypot(Math.max(s.box[0] - p.x, 0, p.x - s.box[1]), Math.max(s.box[2] - p.z, 0, p.z - s.box[3])) : Math.hypot(p.x - s.x, p.z - s.z);
 function farmStation(){
   const p = player.pos;
   let best = null, bd = 1e9;
-  if (FARM.held) for (const s of FARM.stations){ if (s.food !== FARM.held || (s.when && !s.when())) continue; const d = Math.hypot(p.x - s.x, p.z - s.z); if (d < s.r && d < bd){ bd = d; best = s; } }
+  if (FARM.held) for (const s of FARM.stations){ if (s.food !== FARM.held || (s.when && !s.when())) continue; const d = stDist(s, p); if (d < s.r && d < bd){ bd = d; best = s; } }
   if (best) return best;
-  for (const s of FARM.stations){ if (s.when && !s.when()) continue; const d = Math.hypot(p.x - s.x, p.z - s.z); if (d < s.r && d < bd){ bd = d; best = s; } }
+  for (const s of FARM.stations){ if (s.when && !s.when()) continue; const d = stDist(s, p); if (d < s.r && d < bd){ bd = d; best = s; } }
   return best;
 }
 function updateFarm(dt){
