@@ -4900,7 +4900,7 @@ function pushOut(p){
   if (p.z <= 13.4){
     if (p.z > 12.9 && !gate) p.z = 12.9;
     const xl = save.lv.terra >= 2 ? -46.5 : -21.5, xr = save.lv.terra >= 1 ? 46.5 : 21.5, zb = save.lv.terra >= 3 ? -53 : -28.5;
-    const ok = (x, z) => z <= 13.4 && x >= xl && ((x >= 48.7 && x <= 52.3 && z >= -55.8) || (x >= 12 && x <= 60 && z >= -65 && z <= -52) || (x >= 50 && x <= 75.5 && z >= -2.6) || (x >= -60.5 && x <= -46.5 && z >= -7.2) || (x <= xr && z >= zb) || (z >= 6.6 && x <= 104) || (x >= 75.5 && x <= 104 && z >= -1.6));
+    const ok = (x, z) => z <= 13.4 && ((x >= -60.5 && x <= -46.5 && z >= -7.2) || (z >= 6.6 && x >= -62 && x <= 104) || (x >= xl && ((x >= 48.7 && x <= 52.3 && z >= -55.8) || (x >= 12 && x <= 60 && z >= -65 && z <= -52) || (x >= 50 && x <= 75.5 && z >= -2.6) || (x <= xr && z >= zb) || (x >= 75.5 && x <= 104 && z >= -1.6)))); // estrada e garagem sempre abertas
     const L0 = pushOut.last || (pushOut.last = {x:2, z:6.5});
     if (!ok(p.x, p.z)){ if (ok(L0.x, p.z)) p.x = L0.x; else if (ok(p.x, L0.z)) p.z = L0.z; else { p.x = clamp(L0.x, xl, 104); p.z = Math.max(L0.z, zb); } }
     if (p.x > -61 && p.x < -46) for (const b of GARAGE.boxes){ const r = .35;
@@ -5304,6 +5304,20 @@ function missionHTML(next){
     '<div class="cycle">' + MISSIONS.map((x, k) => '<span class="' + (k === i ? 'on' : '') + '">' + (k + 1) + '. ' + x.curto + '</span>').join('') + '</div>';
 }
 const SHOP_GROUPS = [['colhedor', 'Colhedor (você)'], ['fazenda', 'Fazenda'], ['equipe', 'Equipe (paga diária)']];
+function buyUpgrade(id){
+  const u = UP.find(x => x.id === id); if (!u) return false; const lv = save.lv[u.id], cost = u.custos[lv];
+  if (lv >= u.custos.length || save.money < cost || plLevel() < needLv(u)) return false;
+  save.money -= cost; save.lv[u.id]++;
+  if (u.id === 'terra'){ buyPlot(lv); saveField(); }
+  if (WORKER_TYPES[u.id]) hireWorker(u.id, lv);
+  if (u.id === 'ajudante') hireHelper(lv);
+  if (u.id === 'trator') allTractors().forEach(T => withTractor(T, applyTractorLook));
+  if (u.id === 'carreta') allTractors().forEach(T => withTractor(T, () => { const busy = tractor.route && tractor.route.length; buildCart(); if (!busy) tractor.home.set(tractor.x - tractor.cartOff, 0, tractor.z); }));
+  if (u.id === 'trator2'){ createTractor2(); if (game.running && tractor2 && !game.mis) Object.assign(tractor2, {x:-15, z:10, yaw:0, route:[], wantT:0, state:'here', trail:[]}); }
+  persist();
+  sfx(660, 990, .12, 'triangle', .12);
+  return true;
+}
 function shopHTML(){
   const l = plLevel();
   return '<div class="shop"><div class="shop-head"><span>Melhorias</span><span class="money">' + fmtR(save.money) + '</span></div>' + levelHTML() +
@@ -5384,17 +5398,8 @@ function renderMenu(){
     location.reload();
   });
   card.querySelectorAll('.buy').forEach(b => b.addEventListener('click', () => {
-    const u = UP.find(x => x.id === b.dataset.id), lv = save.lv[u.id], cost = u.custos[lv];
-    if (lv >= u.custos.length || save.money < cost || plLevel() < needLv(u)) return;
-    save.money -= cost; save.lv[u.id]++;
-    if (u.id === 'terra'){ buyPlot(lv); saveField(); }
-    if (WORKER_TYPES[u.id]) hireWorker(u.id, lv);
-    if (u.id === 'ajudante') hireHelper(lv);
-    if (u.id === 'trator') allTractors().forEach(T => withTractor(T, applyTractorLook));
-    if (u.id === 'carreta') allTractors().forEach(T => withTractor(T, () => { buildCart(); tractor.home.set(tractor.x - tractor.cartOff, 0, tractor.z); }));
-    if (u.id === 'trator2') createTractor2();
-    persist();
-    sfx(660, 990, .12, 'triangle', .12);
+    const u = UP.find(x => x.id === b.dataset.id);
+    if (!buyUpgrade(u.id)) return;
     renderMenu();
     const nb = card.querySelector('.buy[data-id="' + u.id + '"]'); if (nb && !nb.disabled) nb.focus();
   }));
@@ -6907,6 +6912,17 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
     B.horseK = () => save.horseK && save.fed && save.fed.aveia === save.day ? save.horseK : 1;
     B.fedReset = () => { for (const m of fedShow) m.visible = false; if (save.fed){ if (save.fed.feno === save.day) cowHay.visible = true; if (save.fed.fenoG === save.day) bullHay.visible = true; if (save.fed.aveia === save.day) horseOats.visible = true; if (save.fed.racaoPeru === save.day) turkCorn.visible = true; if (save.fed.racaoCao === save.day) dogFood.visible = true; } };
     B.fedReset();
+    { const gv = document.createElement('div'); gv.className = 'overlay'; gv.style.display = 'none'; gv.style.zIndex = '9'; gv.innerHTML = '<div class="card" id="garCard"></div>'; (document.getElementById('stage') || document.body).appendChild(gv);
+      const renderGar = () => { const c = gv.querySelector('#garCard');
+        c.innerHTML = '<h2>Garagem e oficina</h2><p class="small">O mecânico vende e instala as melhorias na hora. O que você comprar já vale hoje.</p>' + shopHTML() + '<button class="btn" id="garClose">Voltar para a fazenda</button>';
+        c.querySelectorAll('.buy').forEach(b => b.addEventListener('click', () => { if (!buyUpgrade(b.dataset.id)) return; coins(); toast('Melhoria comprada: ' + UP.find(x => x.id === b.dataset.id).nome); renderGar(); const nb = c.querySelector('.buy[data-id="' + b.dataset.id + '"]'); if (nb && !nb.disabled) nb.focus(); }));
+        c.querySelector('#garClose').addEventListener('click', closeGar); };
+      const closeGar = () => { B.mktOpen = false; gv.style.display = 'none'; pressed = false; if (document.activeElement) document.activeElement.blur(); };
+      B.openGarage = () => { if (document.pointerLockElement) document.exitPointerLock(); for (const kk in keys) keys[kk] = false; B.mktOpen = true; renderGar(); gv.style.display = 'flex'; gv.querySelector('.card').scrollTop = 0; const b = gv.querySelector('.buy:not([disabled])') || gv.querySelector('#garClose'); if (b) b.focus(); };
+      window.addEventListener('keydown', e => { if (gv.style.display !== 'none' && (e.code === 'Escape' || e.code === 'KeyE')){ e.preventDefault(); closeGar(); } });
+      const gx = (GARAGE.x0 + GARAGE.x1)/2;
+      FARM.stations.push({x:gx, z:GARAGE.z1 - 1, r:.4, box:[GARAGE.x0 + .4, GARAGE.x1 - .4, GARAGE.z0 + .4, GARAGE.z1 + .6], btn:'Oficina', icon:'🔧', label:'Melhorias',
+        ready:() => !player.carry.length || true, hint:() => 'comprar melhorias na oficina da garagem', act:() => B.openGarage()}); }
 
     // ======== pesca no açude: trapiche de madeira com vara encostada ========
     { const x = 33, y = gy(33, 32.6) + .16;
@@ -6999,7 +7015,7 @@ var FARM = {boxes:[], circles:[], animals:[], stations:[], entered:false, held:n
     B.signUpdate = dt => {
       signTick -= dt; const p = player.pos, held = FARM.held, best = game.running ? farmStation() : null;
       // anel no chão em volta do ponto onde a ação vai acontecer
-      if (best){ const w = best.box ? Math.max(best.box[1] - best.box[0], best.box[3] - best.box[2])/2 + .5 : .9; ringHi.visible = true; ringHi.position.set(sx(best), gy(sx(best), sz(best)) + .06, sz(best)); ringHi.scale.setScalar(w*(1 + Math.sin(now*6)*.04)); } else ringHi.visible = false;
+      if (best){ const w = best.box ? Math.min(2.4, Math.max(best.box[1] - best.box[0], best.box[3] - best.box[2])/2 + .5) : .9; ringHi.visible = true; ringHi.position.set(sx(best), gy(sx(best), sz(best)) + .06, sz(best)); ringHi.scale.setScalar(w*(1 + Math.sin(now*6)*.04)); } else ringHi.visible = false;
       ringMat.opacity = .55 + Math.sin(now*5)*.25;
       if (signTick > 0){ for (const [s, o] of SIGNS) if (o.sp.visible) o.sp.position.y = o.y + Math.sin(now*2.2 + o.ph)*.06; return; }
       signTick = .25; let ri = 0;
