@@ -347,18 +347,19 @@ const metaDay = () => 120 + 60*cycleN();
 let renderer;
 try{ renderer = new THREE.WebGLRenderer({canvas, antialias:true}); }
 catch(e){ card.innerHTML = '<h2>Sem 3D aqui</h2><p>Este navegador não liberou o WebGL. Tente outro navegador ou ative a aceleração de hardware.</p>'; return; }
-renderer.setPixelRatio(Math.min(coarse ? 1.25 : 1.5, window.devicePixelRatio || 1));
+const LITE = coarse || (navigator.hardwareConcurrency || 8) <= 4 || /[?&#]leve(?![a-z])/.test(location.href);
+renderer.setPixelRatio(Math.min(LITE ? 1 : 1.5, window.devicePixelRatio || 1));
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = .86;
-renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = LITE ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
 const C = c => new THREE.Color(c).convertSRGBToLinear();
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(C('#cdd8dc'), 55, 240);
 const camera = new THREE.PerspectiveCamera(50, 1, .1, 400);
 const HEMI = new THREE.HemisphereLight(C('#cfe4ff'), C('#5a6a2e'), .52); scene.add(HEMI);
 const sun = new THREE.DirectionalLight(C('#ffd49a'), 2.5);
-sun.castShadow = true; sun.shadow.mapSize.set(coarse ? 1024 : 2048, coarse ? 1024 : 2048);
-Object.assign(sun.shadow.camera, {left:-28, right:28, top:28, bottom:-28, near:1, far:90});
+sun.castShadow = true; sun.shadow.mapSize.set(LITE ? 1024 : 2048, LITE ? 1024 : 2048);
+{ const R = LITE ? 19 : 28; Object.assign(sun.shadow.camera, {left:-R, right:R, top:R, bottom:-R, near:1, far:90}); }
 sun.shadow.bias = -.0012; sun.shadow.normalBias = .02;
 scene.add(sun, sun.target);
 const SUN_DIR = new V3(.45, .62, -.65).normalize();
@@ -1232,7 +1233,7 @@ const villageBare = (x, z) => (Math.abs(x - 50.5) < 1.7 && z < 9 && z > -56) || 
     for (let i=0;i<tp.count;i++){ const t = Math.min(1, tp.getY(i)/.6); tc[i*3] = .5 + .5*t + .06*t*t; tc[i*3+1] = .55 + .45*t; tc[i*3+2] = .45 + .4*t; }
     tuftGeo.setAttribute('color', new THREE.BufferAttribute(tc, 3));
   }
-  const N = coarse ? 3500 : 11000;
+  const N = LITE ? 3500 : 11000;
   const tufts = new THREE.InstancedMesh(tuftGeo, M.tuft, N);
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new V3(), p = new V3();
   let i = 0, guard = 0;
@@ -1251,7 +1252,7 @@ const villageBare = (x, z) => (Math.abs(x - 50.5) < 1.7 && z < 9 && z > -56) || 
     i++;
   }
   tufts.count = i; tufts.receiveShadow = true; tufts.frustumCulled = false; scene.add(tufts);
-  chunkInstances(tufts, 26, coarse ? 42 : 62);
+  chunkInstances(tufts, 26, LITE ? 42 : 62);
   const fl = new THREE.InstancedMesh(new THREE.SphereGeometry(.06, 6, 4), new THREE.MeshLambertMaterial({color:0xffffff}), 260);
   for (let k=0;k<260;k++){
     let x, z; do { x = rnd(-45, 55); z = rnd(-55, 15); } while ((z > 7.4 && z < 12.6) || (Math.abs(x) < 23 && z > -29 && z < 7) || villageBare(x, z));
@@ -1260,10 +1261,18 @@ const villageBare = (x, z) => (Math.abs(x - 50.5) < 1.7 && z < 9 && z > -56) || 
   }
 })();
 // bananal de fora, só enfeite
-for (let i=0;i<120;i++){
-  let x, z;
-  do { x = rnd(-120, 150); z = rnd(-150, 8); } while ((x > -58 && x < 98 && z > -64) || (x > 70 && x < 100 && z > -10));
-  const t = makeTreeMesh(false); t.g.position.set(x, heightAt(x, z), z); t.g.scale.setScalar(rnd(.95, 1.35)); scene.add(t.g);
+{
+  const by = new Map(), still = new Map();
+  const stillMat = m => { if (!still.has(m)){ const c = m.clone(); if (m.normalMap){ c.normalMap = m.normalMap; c.normalScale = m.normalScale; } if ([M.leaf, M.leaf2, M.leaf3].includes(m)){ c.onBeforeCompile = sh => { sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_end>', LEAF_TRANS); }; c.customProgramCacheKey = () => 'leaf-still'; } still.set(m, c); } return still.get(m); };
+  for (let i=0;i<120;i++){
+    let x, z;
+    do { x = rnd(-120, 150); z = rnd(-150, 8); } while ((x > -58 && x < 98 && z > -64) || (x > 70 && x < 100 && z > -10));
+    const t = makeTreeMesh(false); t.g.position.set(x, heightAt(x, z), z); t.g.scale.setScalar(rnd(.95, 1.35)); t.g.updateMatrixWorld(true);
+    if (LITE && t.crown.userData.hi.userData.low) t.crown.geometry = t.crown.userData.hi.userData.low;
+    const ck = Math.floor(x/55) + ',' + Math.floor(z/55);
+    t.g.traverse(o => { if (!o.isMesh) return; const k = ck + '|' + o.material.uuid; if (!by.has(k)) by.set(k, {mat:o.material, list:[]}); by.get(k).list.push(o.geometry.clone().applyMatrix4(o.matrixWorld)); });
+  }
+  for (const b of by.values()){ const m = new THREE.Mesh(merge(b.list), stillMat(b.mat)); m.receiveShadow = true; m.geometry.computeBoundingSphere(); scene.add(m); }
 }
 
 /* ---------- bananeiras do jogo ---------- */
@@ -1275,7 +1284,18 @@ const cutGeo = new THREE.CircleGeometry(.24, 14);
 const maeGeo = new THREE.CylinderGeometry(.19, .27, 1.25, 12); maeGeo.translate(0, .625, 0);
 // depois é aberto ao meio, com o miolo para cima
 const halfGeo = new THREE.BoxGeometry(1.15, .1, .34);
-const HALF_MATS = [M.stump, M.stump, M.cut, M.stump, M.stump, M.stump];
+const HALF_MATS = [M.stump, M.cut];
+const HALF_PAIR = (() => {
+  const P = [[], []], N = [[], []], U = [[], []];
+  for (const k of [-1, 1]){
+    const g = halfGeo.clone().applyMatrix4(new THREE.Matrix4().compose(new V3(.15, .06, k*.22), new THREE.Quaternion().setFromAxisAngle(new V3(0, 1, 0), k*.1), new V3(1, 1, 1)));
+    const idx = g.index.array, p = g.attributes.position.array, n = g.attributes.normal.array, u = g.attributes.uv.array;
+    for (const gr of g.groups){ const m = gr.materialIndex === 2 ? 1 : 0; for (let i=gr.start;i<gr.start + gr.count;i++){ const v = idx[i]; P[m].push(p[v*3], p[v*3 + 1], p[v*3 + 2]); N[m].push(n[v*3], n[v*3 + 1], n[v*3 + 2]); U[m].push(u[v*2], u[v*2 + 1]); } }
+  }
+  const o = new THREE.BufferGeometry();
+  o.setAttribute('position', new THREE.Float32BufferAttribute(P[0].concat(P[1]), 3)); o.setAttribute('normal', new THREE.Float32BufferAttribute(N[0].concat(N[1]), 3)); o.setAttribute('uv', new THREE.Float32BufferAttribute(U[0].concat(U[1]), 2));
+  o.addGroup(0, P[0].length/3, 0); o.addGroup(P[0].length/3, P[1].length/3, 1); return o;
+})();
 // ladrão (broto a mais na touceira): folhas finas em pé
 const suckerStemGeo = new THREE.CylinderGeometry(.035, .075, .45, 7); suckerStemGeo.translate(0, .22, 0);
 const suckerLeafGeo = (() => { const parts = []; for (let k=0;k<3;k++){ const g = leafGeo(.6, .16, .55, .95, 6); g.rotateZ(1.15); g.rotateY(k*2.1 + .3); g.translate(0, .32, 0); parts.push(g); } const m = merge(parts); m.computeVertexNormals(); return m; })();
@@ -1510,7 +1530,7 @@ function updateSnakes(dt){
     // o rastro da cabeça vira o corpo; a língua sai de vez em quando
     { const t0 = sn.trail[0]; if (!t0 || Math.hypot(sn.x - t0.x, sn.z - t0.z) > .02){ sn.trail.unshift({x:sn.x, z:sn.z}); if (sn.trail.length > 120) sn.trail.pop(); } }
     sn.tongueT -= dt; if (sn.tongueT < -.6) sn.tongueT = rnd(.25, .5); const tg = sn.head.userData.tongue; tg.visible = sn.tongueT > 0; tg.scale.z = .6 + Math.abs(Math.sin(now*28))*.5;
-    const far = Math.hypot(sn.x - player.pos.x, sn.z - player.pos.z) > 45; sn.body.visible = sn.head.visible = !far; if (!far) poseSnake(sn);
+    const dd = Math.hypot(sn.x - player.pos.x, sn.z - player.pos.z), far = dd > 45; sn.body.visible = sn.head.visible = !far; if (!far && (dd < 18 || (sn.pk = (sn.pk || 0) + 1)%4 === 0)) poseSnake(sn); // longe: o corpo é refeito 1 vez a cada 4 quadros
   }
 }
 const snakeNear = d => snakes.some(sn => !sn.dead && Math.hypot(player.pos.x - sn.x, player.pos.z - sn.z) < d);
@@ -1632,7 +1652,7 @@ function plantTree(x, z){
   s.castShadow = true; s.receiveShadow = true;
   c.rotation.x = -Math.PI/2; c.position.y = 1.256; c.scale.setScalar(.8); t.mae.add(s, c);
   t.halves = new THREE.Group();
-  for (const k of [-1, 1]){ const h = new THREE.Mesh(halfGeo, HALF_MATS); h.position.set(.15, .06, k*.22); h.rotation.y = k*.1; h.castShadow = true; h.receiveShadow = true; t.halves.add(h); }
+  { const h = new THREE.Mesh(HALF_PAIR, HALF_MATS); h.castShadow = true; h.receiveShadow = true; t.halves.add(h); }
   t.halves.rotation.y = rnd(0, 6.3); t.halves.visible = false;
   t.stump.add(t.mae, t.halves);
   t.stump.position.set(x - .55, heightAt(x - .55, z + .2) - .05, z + .2); scene.add(t.stump);
@@ -2730,7 +2750,7 @@ function bodyGeo(key, B){
   // a versão leve sai na hora; a detalhada é montada aos poucos, alguns milissegundos por quadro
   const runAll = it => { let r; while (!(r = it.next()).done); return r.value; };
   const entry = {lo:runAll(meshAt(.014)), hi:null}; BODY_CACHE[key] = entry;
-  BODY_JOBS.push({entry, it:meshAt(.0072)});
+  if (!LITE) BODY_JOBS.push({entry, it:meshAt(.0072)});
   return entry;
 }
 const skinnedOf = m => { if (!m.userData.sk){ const c = m.clone(); c.skinning = true; m.userData.sk = c; } return m.userData.sk; };
@@ -2772,10 +2792,46 @@ function chunkInstances(im, cell, maxDist){
   parent.remove(im);
 }
 const PEOPLE_LOD = [], _plp = new V3();
+// simplifica juntando os vértices que caem na mesma célula da grade (o primeiro vértice fica, então a casca não encolhe)
+function lowGeo(src, cell){
+  const pos = src.attributes.position, n = pos.count, idx = src.index ? src.index.array : null, cnt = idx ? idx.length : n;
+  const cells = new Map(), rep = new Int32Array(n), keep = [];
+  for (let i=0;i<n;i++){ const k = Math.floor(pos.getX(i)/cell) + ',' + Math.floor(pos.getY(i)/cell) + ',' + Math.floor(pos.getZ(i)/cell); let r = cells.get(k); if (r === undefined){ r = keep.length; keep.push(i); cells.set(k, r); } rep[i] = r; }
+  const g = new THREE.BufferGeometry();
+  for (const name in src.attributes){ const a = src.attributes[name], sz = a.itemSize, out = new a.array.constructor(keep.length*sz); for (let j=0;j<keep.length;j++) for (let c=0;c<sz;c++) out[j*sz + c] = a.array[keep[j]*sz + c]; g.setAttribute(name, new THREE.BufferAttribute(out, sz, a.normalized)); }
+  const groups = src.groups.length ? src.groups : [{start:0, count:cnt, materialIndex:0}], ind = [];
+  for (const gr of groups){ const st = ind.length, e = Math.min(cnt, gr.start + gr.count);
+    for (let t=gr.start;t + 2<e;t+=3){ const a = rep[idx ? idx[t] : t], b = rep[idx ? idx[t + 1] : t + 1], c = rep[idx ? idx[t + 2] : t + 2]; if (a !== b && b !== c && a !== c) ind.push(a, b, c); }
+    if (src.groups.length) g.addGroup(st, ind.length - st, gr.materialIndex); }
+  g.setIndex(ind);
+  if (!src.boundingSphere) src.computeBoundingSphere(); g.boundingSphere = src.boundingSphere.clone(); g.boundingBox = src.boundingBox ? src.boundingBox.clone() : null;
+  return g;
+}
+const TREE_FAR2 = (LITE ? 20 : 30)**2;
+const LOW_GEO = new WeakMap(), PFAR2 = (LITE ? 7 : 18)**2, _pls = new V3(), _plr = new V3();
+const triN = g => (g.index ? g.index.count : g.attributes.position.count)/3;
+function personParts(sm){
+  let P = sm.userData.parts;
+  if (!P){ P = sm.userData.parts = []; const root = sm.parent; root.getWorldScale(_plr);
+    root.traverse(o => { if (!o.isMesh || o.isSkinnedMesh || o.isInstancedMesh) return; const g = o.geometry; if (!g || !g.attributes.position || o.morphTargetInfluences) return; if (!g.boundingSphere) g.computeBoundingSphere(); o.getWorldScale(_pls); const rad = g.boundingSphere.radius*Math.max(_pls.x, _pls.y, _pls.z)/Math.max(.01, _plr.x);
+      if (LITE && rad < .1) o.castShadow = false;
+      if (rad < .032) P.push([o]);
+      else if (triN(g) > 700) P.push([o, g, null]); }); }
+  return P;
+}
+function personFar(sm, on){
+  sm.userData.farOn = on;
+  for (const e of personParts(sm)){ const o = e[0], hi = e[1]; if (!hi){ o.layers.set(on ? 1 : 0); continue; }
+    if (on && !e[2]){ let lo = LOW_GEO.get(hi); if (!lo){ lo = lowGeo(hi, Math.min(.05, Math.max(.014, hi.boundingSphere.radius/7))); LOW_GEO.set(hi, lo); } e[2] = lo; }
+    if (e[2] && (o.geometry === hi || o.geometry === e[2])) o.geometry = on ? e[2] : hi; }
+}
 function updateCull(){
-  for (const sm of PEOPLE_LOD){ sm.getWorldPosition(_plp); const near = _plp.distanceToSquared(camera.position) < 14*14; const E = sm.userData.body, want = near && E.hi ? E.hi : E.lo; if (sm.geometry !== want) sm.geometry = want; }
+  for (const sm of PEOPLE_LOD){ sm.getWorldPosition(_plp); const d2 = _plp.distanceToSquared(camera.position), near = d2 < 14*14, far = d2 > PFAR2; const E = sm.userData.body;
+    if (far && !E.far){ E.far = lowGeo(E.lo, .03); E.far.boundingSphere = E.lo.boundingSphere; }
+    const want = far ? E.far : near && E.hi ? E.hi : E.lo; if (sm.geometry !== want) sm.geometry = want; if (!sm.userData.parts && sm.parent) personParts(sm); if (far !== !!sm.userData.farOn) personFar(sm, far); }
   const cp0 = camera.position;
-  for (const t of trees){ const c = t.crown, hi = c && c.userData.hi; if (!hi) continue; const far = (t.x - cp0.x)**2 + (t.z - cp0.z)**2 > 30*30; c.geometry = far ? hi.userData.low : hi; if (t.far) for (const o of t.far) o.visible = !far; if (t.kidG) t.kidG.visible = !far && t.kidShow !== false; }
+  for (const t of trees){ const c = t.crown, hi = c && c.userData.hi; if (!hi) continue; const far = (t.x - cp0.x)**2 + (t.z - cp0.z)**2 > TREE_FAR2; c.geometry = far ? hi.userData.low : hi; if (t.far) for (const o of t.far) o.visible = !far; if (t.kidG) t.kidG.visible = !far && t.kidShow !== false;
+    if (t.bunch){ if (t.bunch !== t._bt){ t._bt = t.bunch; t._btl = []; t._bf = null; t.bunch.traverse(o => { if (o.isMesh && triN(o.geometry) < 100) t._btl.push(o); }); } if (t._bf !== far){ t._bf = far; for (const o of t._btl) o.layers.set(far ? 1 : 0); } } }
   const Lc = chunkInstances.list; if (!Lc) return; const cp = camera.position; for (const ch of Lc) if (ch.userData.cullD) ch.visible = ch.userData.cullC.distanceTo(cp) < ch.userData.cullD; }
 // pedra leve: icosaedro deformado no tamanho da pedra original
 function lowRock(src){
@@ -3284,7 +3340,7 @@ const STRIP_GEO = (() => {
   }
   return merge(parts);
 })();
-const STRIPS = new THREE.InstancedMesh(STRIP_GEO, M.leafDead, coarse ? 1600 : 5000);
+const STRIPS = new THREE.InstancedMesh(STRIP_GEO, M.leafDead, LITE ? 1600 : 5000);
 STRIPS.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(STRIPS.instanceMatrix.count*3), 3); STRIPS.count = 0; STRIPS.receiveShadow = true; STRIPS.frustumCulled = false; scene.add(STRIPS);
 const PIECE_GEO = new THREE.CylinderGeometry(1, 1, 1, 12, 1, false, 0, Math.PI); PIECE_GEO.rotateZ(Math.PI/2);
 M.trunkPiece = L('#ffffff', {map:trunkTex, normalMap:trunkNrm, roughness:.8});
@@ -3293,7 +3349,7 @@ PIECES.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(PIECE
 const LIT_TINT = ['#a99e8a','#948a7a','#7e7568','#b3a690','#6c645a','#8a7f6c'].map(C), PIECE_TINT = ['#f0efc8','#e0d4a6','#d0bb8e','#c0a67e','#e6e0b0'].map(C);
 function fieldDebris(rect){
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), area = (rect[1] - rect[0])*(rect[3] - rect[2]);
-  const n = Math.round(area*(coarse ? .25 : .6)), np = Math.round(area/8);
+  const n = Math.round(area*(LITE ? .25 : .6)), np = Math.round(area/8);
   for (let i=0;i<n && STRIPS.count < STRIPS.instanceMatrix.count;i++){
     const x = rnd(rect[0], rect[1]), z = rnd(rect[2], rect[3]); if (onRoad(x, z, 1.7)) continue;
     e.set(0, rnd(0, 6.3), 0); q.setFromEuler(e); const sc = rnd(.8, 1.3);
@@ -3599,7 +3655,7 @@ const outD = (x, z) => Math.hypot(Math.max(0, -60 - x, x - 100), Math.max(0, -66
 (() => {
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new V3(0, 1, 0), sc = new V3(), p = new V3();
   // Mata Atlântica nos morros: copas de muitos verdes, com quaresmeira roxa, ipê-amarelo e embaúba prateada
-  const N = coarse ? 600 : 1100;
+  const N = LITE ? 600 : 1100;
   const canopyTex = tex(256, 256, (g, w, h) => {
     g.fillStyle = '#c4c4c4'; g.fillRect(0, 0, w, h);
     for (let i=0;i<2200;i++){ const v = rnd(130, 255)|0; g.fillStyle = 'rgba(' + v + ',' + v + ',' + v + ',.55)'; g.beginPath(); g.ellipse(rnd(0,w), rnd(0,h), rnd(2,6), rnd(1.5,4), rnd(0,3), 0, 7); g.fill(); }
@@ -3790,7 +3846,7 @@ const flies = [];
 })();
 /* ---------- chuva ---------- */
 const SKY0 = {top:sky.material.uniforms.top.value.clone(), mid:sky.material.uniforms.mid.value.clone(), bot:sky.material.uniforms.bot.value.clone()};
-const RAIN_N = coarse ? 500 : 1100;
+const RAIN_N = LITE ? 500 : 1100;
 const rainGeo = new THREE.BufferGeometry(), rainOff = new Float32Array(RAIN_N*3);
 rainGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(RAIN_N*6), 3));
 for (let i=0;i<RAIN_N;i++){ rainOff[i*3] = rnd(-26, 26); rainOff[i*3+1] = rnd(0, 20); rainOff[i*3+2] = rnd(-34, 14); }
@@ -3858,7 +3914,7 @@ function updateRain(dt){
   }
   a.needsUpdate = true;
 }
-const POL_N = coarse ? 60 : 140, polGeo = new THREE.BufferGeometry(), polOff = [];
+const POL_N = LITE ? 60 : 140, polGeo = new THREE.BufferGeometry(), polOff = [];
 polGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(POL_N*3), 3));
 for (let i=0;i<POL_N;i++) polOff.push([rnd(-14, 14), rnd(.3, 4), rnd(-16, 8), rnd(0, 6)]);
 const pollen = new THREE.Points(polGeo, new THREE.PointsMaterial({color:C('#fff2b0'), size:.06, transparent:true, opacity:.75, depthWrite:false, blending:THREE.AdditiveBlending}));
@@ -5549,7 +5605,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && !no
   }, undefined, () => console.warn('modelo não encontrado:', file));
   const pasture = () => { const x = rnd(-45, 92), z = rnd(-50, 15.5); return (inFields(x, z) || onRoad(x, z, 2.2) || nearShed(x, z) || (z > 7.4 && z < 12.6 && x > -62) || (z > 12.8 && Math.abs(x) < 44 && z < 48)) ? null : [x, z]; };
   // samambaia na beira da mata e junto da cerca
-  scatter('fern_02/fern_02.json', coarse ? 60 : 160, () => { const x = rnd(-80, 120), z = rnd(-90, 16); const d = outD(x, z); return (d > 1 && d < 14) || (z > 12.8 && z < 14.2 && Math.abs(x) > 3 && Math.random() < .5) ? [x, z] : null; }, () => rnd(.7, 1.3), true);
+  scatter('fern_02/fern_02.json', LITE ? 60 : 160, () => { const x = rnd(-80, 120), z = rnd(-90, 16); const d = outD(x, z); return (d > 1 && d < 14) || (z > 12.8 && z < 14.2 && Math.abs(x) > 3 && Math.random() < .5) ? [x, z] : null; }, () => rnd(.7, 1.3), true);
   // pedras no pasto e na subida dos morros
   scatter('boulder_01/boulder_01.json', 18, () => { const x = rnd(-90, 130), z = rnd(-100, 16), d = outD(x, z); if (Math.abs(x) < 46 && z > 12.5 && z < 50) return null; return (d > 0 && d < 30) || (pasture() && Math.random() < .15) ? [x, z] : null; }, () => rnd(.35, 1.1), true);
   // caixas de papelão empilhadas no galpão
@@ -6935,7 +6991,7 @@ let perfAcc = 0, perfN = 0, quality = renderer.getPixelRatio();
 function loop(ts){
   const raw = Math.max(0, (ts - last)/1000), dt = Math.min(.05, raw); last = ts;
   if (raw < .5){ perfAcc += raw; perfN++; }
-  if (perfAcc > 3){ const slow = perfAcc/perfN > 1/38; if (slow && quality > .75){ quality = Math.max(.75, quality - .15); renderer.setPixelRatio(quality); resize(); } else if (slow && postOn && !save.gfxKeep){ save.gfxKeep = 1; setGfx(false); toast('O jogo estava lento: gráfico mudou para Leve (aperte G para voltar ao Ultra)'); } perfAcc = 0; perfN = 0; }
+  if (perfAcc > 3){ const slow = perfAcc/perfN > 1/38; if (slow && quality > (LITE ? .6 : .75)){ quality = Math.max(LITE ? .6 : .75, quality - .15); renderer.setPixelRatio(quality); resize(); } else if (slow && postOn && !save.gfxKeep){ save.gfxKeep = 1; setGfx(false); toast('O jogo estava lento: gráfico mudou para Leve (aperte G para voltar ao Ultra)'); } perfAcc = 0; perfN = 0; }
   update(dt);
   runBodyJobs(game.running ? 4 : 12);
   if ((loop.k = ((loop.k || 0) + 1)%6) === 0) updateCull();
