@@ -17,6 +17,8 @@ O QUE TEM AQUI
 index.html            o jogo (gerado)
 assets/               texturas, céu e modelos 3D (gerado)
 icon.svg              ícone do site
+icon-192.png e icon-512.png  ícones do app instalado (Android e iPhone)
+sw.js                 guarda o jogo para abrir sem internet (gerado)
 manifest.webmanifest  dados para instalar como app (e usar depois na Play Store)
 _headers              deixa as texturas em cache no Netlify (carrega mais rápido na 2ª vez)
 
