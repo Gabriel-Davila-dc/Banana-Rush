@@ -3504,7 +3504,7 @@ const stairAt = (x, z) => STAIRS.find(S => { const u = S.ax === 'x' ? x : z, c =
     fe.set(rnd(-.05, .05), rnd(0, 6.3), rnd(-.05, .05)); fq.setFromEuler(fe);
     m.compose(new V3(px, h, 13.4), fq, new V3(1, rnd(.92, 1.06), 1)); posts.setMatrixAt(i, m); tops.push([px, h]);
   }
-  posts.castShadow = true; scene.add(posts);
+  posts.castShadow = true; posts.frustumCulled = false; scene.add(posts);
   // quatro fios com leve barriga entre os mourões
   const wp = [];
   for (let i=0;i<n-1;i++){
@@ -3517,6 +3517,18 @@ const stairAt = (x, z) => STAIRS.find(S => { const u = S.ax === 'x' ? x : z, c =
   }
   const wg = new THREE.BufferGeometry(); wg.setAttribute('position', new THREE.Float32BufferAttribute(wp, 3));
   scene.add(new THREE.LineSegments(wg, new THREE.LineBasicMaterial({color:C('#4d5052')})));
+  // a mesma cerca fecha os lados e o fundo da fazenda: onde o colhedor não passa, tem cerca à vista
+  { const segs = [[-61, 13.4, -61, -65.8], [-61, -65.8, 99.5, -65.8], [99.5, -65.8, 99.5, 13.4]], pts = [];
+    for (const [ax, az, bx, bz] of segs){ const n = Math.ceil(Math.hypot(bx - ax, bz - az)/2.8); for (let i=0;i<n;i++) pts.push({x:ax + (bx - ax)*i/n + rnd(-.1, .1)*(ax === bx ? 0 : 1), z:az + (bz - az)*i/n + rnd(-.1, .1)*(az === bz ? 0 : 1)}); }
+    pts.push({x:99.5, z:13.4});
+    const ps = new THREE.InstancedMesh(postGeo, M.fencePost, pts.length), w2 = [];
+    pts.forEach((q, i) => { q.h = heightAt(q.x, q.z); fe.set(rnd(-.05, .05), rnd(0, 6.3), rnd(-.05, .05)); fq.setFromEuler(fe); m.compose(new V3(q.x, q.h, q.z), fq, new V3(1, rnd(.92, 1.06), 1)); ps.setMatrixAt(i, m); });
+    ps.castShadow = true; ps.frustumCulled = false; scene.add(ps);
+    for (let i=0;i<pts.length - 1;i++){ const p1 = pts[i], p2 = pts[i + 1];
+      for (const y of [.35, .6, .85, 1.1]) for (let k=0;k<6;k++){ const t0 = k/6, t1 = (k + 1)/6, sag = t => Math.sin(Math.PI*t)*.04;
+        w2.push(p1.x + (p2.x - p1.x)*t0, p1.h + (p2.h - p1.h)*t0 + y - sag(t0), p1.z + (p2.z - p1.z)*t0, p1.x + (p2.x - p1.x)*t1, p1.h + (p2.h - p1.h)*t1 + y - sag(t1), p1.z + (p2.z - p1.z)*t1); } }
+    const wg2 = new THREE.BufferGeometry(); wg2.setAttribute('position', new THREE.Float32BufferAttribute(w2, 3));
+    scene.add(new THREE.LineSegments(wg2, new THREE.LineBasicMaterial({color:C('#4d5052')}))); }
   // plataforma de carga na altura da carroceria do caminhão, com escada na ponta oeste
   // galpão de embalagem aberto, onde o trator descarrega: piso e colunas de concreto, telha ondulada, mureta de tijolo, tanques e caixas
   const shed = new THREE.Group(), SW = 14, SD = 8, DUP = DOCK_Y - .3;
@@ -4924,10 +4936,9 @@ function pushOut(p){
   const gate = Math.abs(p.x - .2) < 1.1;
   if (p.z <= 13.4){
     if (p.z > 12.9 && !gate) p.z = 12.9;
-    const xl = save.lv.terra >= 2 ? -46.5 : -21.5, xr = save.lv.terra >= 1 ? 46.5 : 21.5, zb = save.lv.terra >= 3 ? -53 : -28.5;
-    const ok = (x, z) => z <= 13.4 && ((x >= -60.5 && x <= -46.5 && z >= -7.2) || (z >= 6.6 && x >= -62 && x <= 104) || (x >= xl && ((x >= 48.7 && x <= 52.3 && z >= -55.8) || (x >= 12 && x <= 60 && z >= -65 && z <= -52) || (x >= 50 && x <= 75.5 && z >= -2.6) || (x <= xr && z >= zb) || (x >= 75.5 && x <= 104 && z >= -1.6)))); // estrada e garagem sempre abertas
+    const ok = (x, z) => z <= 13.4 && x >= -60.6 && x <= 99.1 && z >= -65.4; // até a cerca de arame em volta da fazenda
     const L0 = pushOut.last || (pushOut.last = {x:2, z:6.5});
-    if (!ok(p.x, p.z)){ if (ok(L0.x, p.z)) p.x = L0.x; else if (ok(p.x, L0.z)) p.z = L0.z; else { p.x = clamp(L0.x, xl, 104); p.z = Math.max(L0.z, zb); } }
+    if (!ok(p.x, p.z)){ if (ok(L0.x, p.z)) p.x = L0.x; else if (ok(p.x, L0.z)) p.z = L0.z; else { p.x = clamp(L0.x, -60.6, 99.1); p.z = Math.max(L0.z, -65.4); } }
     if (p.x > -61 && p.x < -46) for (const b of GARAGE.boxes){ const r = .35;
       if (p.x > b[0] - r && p.x < b[1] + r && p.z > b[2] - r && p.z < b[3] + r){ const o = [[p.x - (b[0] - r), 'x', b[0] - r], [(b[1] + r) - p.x, 'x', b[1] + r], [p.z - (b[2] - r), 'z', b[2] - r], [(b[3] + r) - p.z, 'z', b[3] + r]].sort((a, c) => a[0] - c[0])[0]; p[o[1]] = o[2]; } }
     if (p.z < -50) BICHO.solids(p);
